@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import path from 'node:path';
-import { buildSystemPrompt, getModelPath } from '../src/localBrain';
+import { buildSystemPrompt, getModelPath, isMetaResponse, selectUserFacingResponse } from '../src/localBrain';
 
 describe('local brain utilities', () => {
     describe('getModelPath', () => {
@@ -46,6 +46,33 @@ describe('local brain utilities', () => {
         test('preserves the base prompt at the start', () => {
             const result = buildSystemPrompt(base, 'some memory');
             expect(result.startsWith(base)).toBe(true);
+        });
+    });
+
+    describe('response selection', () => {
+        test('detects model-comparison responses as meta output', () => {
+            expect(isMetaResponse('Gemma\'s response is more specific and relevant to the user\'s request.')).toBe(true);
+            expect(isMetaResponse('Hello! How can I help you today?')).toBe(false);
+        });
+
+        test('falls back to the best user-facing candidate when synthesis is meta', () => {
+            const result = selectUserFacingResponse(
+                'Gemma\'s response is more specific and relevant to the user\'s request.',
+                'General status noted.',
+                'Hello! How can I help you today?'
+            );
+
+            expect(result).toBe('Hello! How can I help you today?');
+        });
+
+        test('keeps the synthesized response when it is already user-facing', () => {
+            const result = selectUserFacingResponse(
+                'Hello! How can I help you today?',
+                'Hi there.',
+                'Acknowledged.'
+            );
+
+            expect(result).toBe('Hello! How can I help you today?');
         });
     });
 });

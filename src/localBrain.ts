@@ -8,6 +8,18 @@ interface BrainResources {
     systemPrompt: string;
 }
 
+const META_RESPONSE_PATTERNS = [
+    /\bqwen\b/i,
+    /\bgemma\b/i,
+    /\bmodel output\b/i,
+    /\bcandidate answer\b/i,
+    /\bresponse is more\b/i,
+    /\bfinal answer should\b/i,
+    /\btherefore,? the final answer should\b/i,
+    /\bbetter answer\b/i,
+    /\bmore specific and relevant\b/i
+] as const;
+
 export interface WaveThoughtResult {
     finalResponse: string;
     qwenOutput: string | null;
@@ -19,6 +31,53 @@ let inferenceQueue = Promise.resolve();
 
 export function getModelPath(envName: string, fileName: string): string {
     return process.env[envName] ?? path.join(process.cwd(), 'models', fileName);
+}
+
+function normalizeResponse(value: string | null | undefined): string {
+    return value?.trim() ?? '';
+}
+
+export function isMetaResponse(value: string | null | undefined): boolean {
+    const text = normalizeResponse(value);
+    return !text || META_RESPONSE_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+function scoreCandidateResponse(value: string | null | undefined): number {
+    const text = normalizeResponse(value);
+    if (!text) return Number.NEGATIVE_INFINITY;
+
+    let score = 0;
+
+    if (!isMetaResponse(text)) score += 10;
+    if (text.length >= 2) score += 1;
+    if (text.length <= 240) score += 1;
+    if (/[.!?]$/.test(text)) score += 0.5;
+    if (/^(hi|hello|hey)\b/i.test(text)) score += 0.5;
+    if (/\b(qwen|gemma)\b/i.test(text)) score -= 8;
+    if (/\b(response is|final answer should|therefore)\b/i.test(text)) score -= 4;
+
+    return score;
+}
+
+export function selectUserFacingResponse(finalResponse: string | null | undefined, qwenOutput: string | null | undefined, gemmaOutput: string | null | undefined): string {
+    const candidates = [
+        { source: 'final', text: normalizeResponse(finalResponse) },
+        { source: 'gemma', text: normalizeResponse(gemmaOutput) },
+        { source: 'qwen', text: normalizeResponse(qwenOutput) }
+    ].filter((candidate) => candidate.text);
+
+    if (!candidates.length) {
+        return '';
+    }
+
+    const ranked = candidates
+        .map((candidate) => ({
+            ...candidate,
+            score: scoreCandidateResponse(candidate.text)
+        }))
+        .sort((left, right) => right.score - left.score);
+
+    return ranked[0]!.text;
 }
 
 function assertModelExists(modelPath: string) {
@@ -129,18 +188,25 @@ export async function processWaveThought(input: string, memoryContext?: string |
 
             synthesisSession = createSession(qwenContext, contextualSystemPrompt);
             const mergePrompt = [
-                '[Qwen Output]:',
+                '[User Input]:',
+                input,
+                '',
+                '[Candidate Answer A]:',
                 qwenOutput,
                 '',
-                '[Gemma Output]:',
+                '[Candidate Answer B]:',
                 gemmaOutput,
                 '',
-                'Merge these two model outputs into one final answer.',
-                'Keep the answer concise, grounded, and useful.',
-                'Do not mention the internal model names unless the user explicitly asked for diagnostics.'
+                'Write the final assistant reply to the user.',
+                'Answer the user directly in plain language.',
+                'Do not compare the candidates.',
+                'Do not mention internal model names, internal phases, or which answer is better.',
+                'Do not say "the final answer should be".',
+                'Return only the final user-facing reply.'
             ].join('\n');
 
-            const finalResponse = await synthesisSession.prompt(mergePrompt);
+            const synthesizedResponse = await synthesisSession.prompt(mergePrompt);
+            const finalResponse = selectUserFacingResponse(synthesizedResponse, qwenOutput, gemmaOutput);
             const duration = ((Date.now() - startTime) / 1000).toFixed(2);
             console.log(`Final response synthesized in ${duration}s`);
 

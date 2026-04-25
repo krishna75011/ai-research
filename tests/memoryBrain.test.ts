@@ -130,8 +130,10 @@ describe('memory brain', () => {
         const legacyLedgerPath = testPath('brain-artifact-legacy', 'crystal');
         const greeting = 'hi';
         const pollutedAssistant = 'Alpha Phase: "Hello! How can I assist you today?" Beta Phase: Acknowledged.';
+        const comparativeAssistant = 'Gemma\'s response is more specific and relevant to the user\'s request than the Qwen response.';
 
         expect(containsOrchestrationArtifact(pollutedAssistant)).toBe(true);
+        expect(containsOrchestrationArtifact(comparativeAssistant)).toBe(true);
 
         await recordInteraction({
             contentText: greeting,
@@ -147,11 +149,19 @@ describe('memory brain', () => {
             modality: 'system_derived'
         }, { brainPath, legacyLedgerPath });
 
+        await recordInteraction({
+            contentText: comparativeAssistant,
+            waveSignature: vectorFor('Hello! How can I assist you today?'),
+            sourceKind: 'assistant',
+            modality: 'system_derived'
+        }, { brainPath, legacyLedgerPath });
+
         const probe = await probeMemory(greeting, vectorFor(greeting), { brainPath, legacyLedgerPath });
 
         expect(probe.assembledContext).toContain('hi');
         expect(probe.assembledContext).not.toContain('Alpha Phase');
         expect(probe.assembledContext).not.toContain('Beta Phase');
+        expect(probe.assembledContext).not.toContain('Gemma\'s response');
     });
 
     test('isolates recall between workspaces', async () => {

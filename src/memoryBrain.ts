@@ -28,7 +28,13 @@ const ORCHESTRATION_ARTIFACT_PATTERNS = [
     '[Qwen Output]',
     '[Gemma Output]',
     'Qwen Output:',
-    'Gemma Output:'
+    'Gemma Output:',
+    "Qwen's response",
+    "Gemma's response",
+    'Qwen response',
+    'Gemma response',
+    'final answer should be',
+    'more specific and relevant to the user'
 ] as const;
 
 export type MemoryModality = 'text' | 'acoustic_summary' | 'system_derived' | 'legacy_import' | 'file_chunk';
@@ -786,7 +792,7 @@ function resolveWorkspaceId(db: Database, requested: string | null | undefined):
 }
 
 function runMemoryMaintenance(db: Database) {
-    const maintenanceKey = 'maintenance:purge-orchestration-artifacts:v1';
+    const maintenanceKey = 'maintenance:purge-orchestration-artifacts:v2';
     if (getMeta(db, maintenanceKey)) return;
 
     db.query(`
@@ -801,6 +807,12 @@ function runMemoryMaintenance(db: Database) {
              OR content_text LIKE '%[Gemma Output]%'
              OR content_text LIKE '%Qwen Output:%'
              OR content_text LIKE '%Gemma Output:%'
+             OR content_text LIKE '%Qwen''s response%'
+             OR content_text LIKE '%Gemma''s response%'
+             OR content_text LIKE '%Qwen response%'
+             OR content_text LIKE '%Gemma response%'
+             OR content_text LIKE '%final answer should be%'
+             OR content_text LIKE '%more specific and relevant to the user%'
           )
     `).run();
 
