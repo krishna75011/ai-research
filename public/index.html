@@ -681,8 +681,14 @@
             developerMode: false,
             lastLatency: '-- ms',
             lastFeedbackAtomId: null,
-            isGenerating: false
+            isGenerating: false,
+            streamingText: ''
         };
+
+        marked.setOptions({
+            breaks: true,
+            gfm: true
+        });
 
         window.addEventListener('error', (event) => {
             const boundary = document.getElementById('error-boundary');
@@ -1203,6 +1209,16 @@
                     metricLatency.innerText = state.lastLatency;
                     renderEvidence(data);
                     renderDiagnostics(data.modelOutputs);
+
+                    const body = document.getElementById('temp-stream-body');
+                    const tempMsg = document.getElementById('temp-stream-msg');
+                    if (body && data.text) {
+                        body.innerHTML = marked.parse(data.text);
+                        tempMsg.querySelector('.message-role').textContent = `Assistant - ${formatDate(new Date().toISOString())}`;
+                        tempMsg.id = '';
+                        body.id = '';
+                    }
+
                     if (Array.isArray(data.vector)) {
                         draw3D(data.vector);
                         playHolographicChord(data.vector);
@@ -1234,12 +1250,13 @@
                     
                     if (tempMsg && tempMsg.dataset.started !== 'true') {
                         tempMsg.dataset.started = 'true';
-                        body.textContent = '';
+                        state.streamingText = '';
                         tempMsg.querySelector('.message-role').textContent = 'Assistant - streaming...';
                     }
                     
                     if (body) {
-                        body.textContent += data.token || '';
+                        state.streamingText += data.token || '';
+                        body.innerHTML = marked.parse(state.streamingText);
                     }
                     
                     const scroller = document.getElementById('message-scroller');

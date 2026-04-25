@@ -146,8 +146,9 @@ async function initializeResources(): Promise<BrainResources> {
             'You are a high-authority synthesis engine for Chronicle Memory.',
             'You will receive a User Input and two Candidate Answers.',
             'Your task is to produce the single best response for the user.',
-            'CRITICAL: If one candidate provides a detailed answer and the other says "I don\'t know", ALWAYS prefer the detailed answer.',
-            'DO NOT echo internal tags like [User Input] or labels like "User:".',
+            'CRITICAL: Preserve the Markdown formatting (lists, bolding, line breaks) from the best candidate.',
+            'DO NOT condense the response into a single paragraph if the candidate used lists.',
+            'If one candidate provides a detailed answer and the other says "I don\'t know", ALWAYS prefer the detailed answer.',
             'Provide ONLY the clean, conversational assistant reply.'
         ].join(' ')
     };
