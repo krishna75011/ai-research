@@ -5,8 +5,9 @@ import path from 'node:path';
 import { textToWave } from './modulator';
 import { calculateSector, cosineSimilarity } from './waveMath';
 import { simulateInterference, type WaveUnit } from './virtualCrystal';
+import { computeEmbedding, calculateEmbeddingSimilarity } from './embeddings';
 
-export const MEMORY_MODE = 'chrono-resonant-memory-brain';
+export const MEMORY_MODE = 'chrono-resonant-memory-brain-v2';
 export const DEFAULT_WORKSPACE_ID = 'personal';
 export const DEFAULT_WORKSPACE_NAME = 'Personal';
 
@@ -81,6 +82,7 @@ export interface RecordInteractionInput {
     isPinned?: boolean;
     recallState?: MemoryRecallState;
     correctionState?: MemoryCorrectionState;
+    embedding?: number[];
 }
 
 export interface MemoryAtom {
@@ -108,6 +110,7 @@ export interface MemoryAtom {
     isPinned: boolean;
     recallState: MemoryRecallState;
     correctionState: MemoryCorrectionState;
+    embeddingJson: string | null;
 }
 
 export interface StandingWave {
@@ -270,6 +273,7 @@ type AtomRow = {
     is_pinned: number;
     recall_state: MemoryRecallState;
     correction_state: MemoryCorrectionState;
+    embedding_json: string | null;
 };
 
 type StandingWaveRow = {
@@ -593,7 +597,8 @@ function mapAtom(row: AtomRow): MemoryAtom {
         chunkIndex: row.chunk_index,
         isPinned: Boolean(row.is_pinned),
         recallState: row.recall_state,
-        correctionState: row.correction_state
+        correctionState: row.correction_state,
+        embeddingJson: row.embedding_json
     };
 }
 
@@ -679,7 +684,7 @@ function ensureSchema(db: Database) {
 
         CREATE TABLE IF NOT EXISTS memory_atoms (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            workspace_id TEXT NOT NULL DEFAULT 'personal',
+            workspace_id TEXT NOT NULL,
             created_at TEXT NOT NULL,
             source_kind TEXT NOT NULL,
             session_id TEXT,
@@ -693,15 +698,16 @@ function ensureSchema(db: Database) {
             parent_atom_id INTEGER,
             legacy_origin TEXT,
             topic_key TEXT,
-            entity_keys_json TEXT NOT NULL DEFAULT '[]',
-            source_type TEXT NOT NULL DEFAULT 'conversation',
+            entity_keys_json TEXT NOT NULL,
+            source_type TEXT NOT NULL,
             source_uri TEXT,
             source_title TEXT,
             source_hash TEXT,
             chunk_index INTEGER,
             is_pinned INTEGER NOT NULL DEFAULT 0,
             recall_state TEXT NOT NULL DEFAULT 'active',
-            correction_state TEXT NOT NULL DEFAULT 'none'
+            correction_state TEXT NOT NULL DEFAULT 'none',
+            embedding_json TEXT
         );
 
         CREATE TABLE IF NOT EXISTS standing_waves (
@@ -733,17 +739,21 @@ function ensureSchema(db: Database) {
         );
     `);
 
+    ensureColumn(db, 'memory_atoms', 'topic_key', 'TEXT');
+    ensureColumn(db, 'memory_atoms', 'entity_keys_json', "TEXT NOT NULL DEFAULT '[]'");
+    ensureColumn(db, 'memory_atoms', 'source_type', "TEXT NOT NULL DEFAULT 'conversation'");
+    ensureColumn(db, 'memory_atoms', 'source_uri', 'TEXT');
+    ensureColumn(db, 'memory_atoms', 'source_title', 'TEXT');
+    ensureColumn(db, 'memory_atoms', 'source_hash', 'TEXT');
+    ensureColumn(db, 'memory_atoms', 'chunk_index', 'INTEGER');
+    ensureColumn(db, 'memory_atoms', 'is_pinned', 'INTEGER NOT NULL DEFAULT 0');
+    ensureColumn(db, 'memory_atoms', 'recall_state', "TEXT NOT NULL DEFAULT 'active'");
+    ensureColumn(db, 'memory_atoms', 'correction_state', "TEXT NOT NULL DEFAULT 'none'");
+    ensureColumn(db, 'memory_atoms', 'embedding_json', 'TEXT');
+    ensureColumn(db, 'standing_waves', 'entity_keys_json', "TEXT NOT NULL DEFAULT '[]'");
+    ensureColumn(db, 'standing_waves', 'source_atom_ids_json', "TEXT NOT NULL DEFAULT '[]'");
+    ensureColumn(db, 'workspaces', 'is_default', 'INTEGER NOT NULL DEFAULT 0');
     ensureColumn(db, 'memory_atoms', 'workspace_id', "workspace_id TEXT NOT NULL DEFAULT 'personal'");
-    ensureColumn(db, 'memory_atoms', 'source_type', "source_type TEXT NOT NULL DEFAULT 'conversation'");
-    ensureColumn(db, 'memory_atoms', 'source_uri', 'source_uri TEXT');
-    ensureColumn(db, 'memory_atoms', 'source_title', 'source_title TEXT');
-    ensureColumn(db, 'memory_atoms', 'source_hash', 'source_hash TEXT');
-    ensureColumn(db, 'memory_atoms', 'chunk_index', 'chunk_index INTEGER');
-    ensureColumn(db, 'memory_atoms', 'is_pinned', 'is_pinned INTEGER NOT NULL DEFAULT 0');
-    ensureColumn(db, 'memory_atoms', 'recall_state', "recall_state TEXT NOT NULL DEFAULT 'active'");
-    ensureColumn(db, 'memory_atoms', 'correction_state', "correction_state TEXT NOT NULL DEFAULT 'none'");
-
-    ensureColumn(db, 'standing_waves', 'workspace_id', "workspace_id TEXT NOT NULL DEFAULT 'personal'");
     ensureColumn(db, 'standing_waves', 'first_seen_at', "first_seen_at TEXT NOT NULL DEFAULT '1970-01-01T00:00:00.000Z'");
 
     ensureColumn(db, 'evidence_branches', 'workspace_id', "workspace_id TEXT NOT NULL DEFAULT 'personal'");

@@ -65,7 +65,7 @@ describe('resonance ledger compatibility', () => {
         await saveThoughtWave('append only memory', vector, { brainPath, ledgerPath });
 
         const result = await triggerEntropy({ brainPath, ledgerPath });
-        expect(result.memoryMode).toBe('chrono-resonant-memory-brain');
+        expect(result.memoryMode).toBe('chrono-resonant-memory-brain-v2');
         expect(result.atoms).toBe(1);
     });
 });

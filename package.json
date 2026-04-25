@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "download:qwen": "bun run download-model.ts",
-    "download:gemma": "bun run download-gemma.ts"
+    "download:gemma": "bun run download-gemma.ts",
+    "download:embeddings": "bun run download-embeddings.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",
