@@ -1177,26 +1177,17 @@
 
                 if (data.status === 'thought_stream') {
                     let tempMsg = document.getElementById('temp-stream-msg');
-                    if (!tempMsg) {
-                        tempMsg = document.createElement('div');
-                        tempMsg.id = 'temp-stream-msg';
-                        tempMsg.className = 'message assistant';
-                        
-                        const role = document.createElement('span');
-                        role.className = 'message-role';
-                        role.textContent = 'Assistant - streaming...';
-                        tempMsg.appendChild(role);
-
-                        const body = document.createElement('div');
-                        body.className = 'message-body';
-                        body.id = 'temp-stream-body';
-                        tempMsg.appendChild(body);
-
-                        messageList.appendChild(tempMsg);
-                        document.getElementById('empty-state').style.display = 'none';
-                    }
                     const body = document.getElementById('temp-stream-body');
-                    body.textContent += data.token || '';
+                    
+                    if (tempMsg && tempMsg.dataset.started !== 'true') {
+                        tempMsg.dataset.started = 'true';
+                        body.textContent = '';
+                        tempMsg.querySelector('.message-role').textContent = 'Assistant - streaming...';
+                    }
+                    
+                    if (body) {
+                        body.textContent += data.token || '';
+                    }
                     
                     const scroller = document.getElementById('message-scroller');
                     scroller.scrollTop = scroller.scrollHeight;
@@ -1219,6 +1210,41 @@
             state.isGenerating = true;
             sendBtn.disabled = true;
             input.disabled = true;
+
+            const userMsg = document.createElement('div');
+            userMsg.className = 'message user';
+            const role = document.createElement('span');
+            role.className = 'message-role';
+            role.textContent = `YOU - ${formatDate(new Date().toISOString())}`;
+            userMsg.appendChild(role);
+            const bodyDiv = document.createElement('div');
+            bodyDiv.className = 'message-body';
+            bodyDiv.textContent = thought;
+            userMsg.appendChild(bodyDiv);
+            messageList.appendChild(userMsg);
+            
+            // Add placeholder assistant message
+            const tempMsg = document.createElement('div');
+            tempMsg.id = 'temp-stream-msg';
+            tempMsg.className = 'message assistant';
+            
+            const asstRole = document.createElement('span');
+            asstRole.className = 'message-role';
+            asstRole.textContent = 'Assistant - thinking...';
+            tempMsg.appendChild(asstRole);
+
+            const asstBody = document.createElement('div');
+            asstBody.className = 'message-body';
+            asstBody.id = 'temp-stream-body';
+            asstBody.innerHTML = '<span style="opacity: 0.5;">Analyzing memories...</span>';
+            tempMsg.appendChild(asstBody);
+            
+            messageList.appendChild(tempMsg);
+            
+            document.getElementById('empty-state').style.display = 'none';
+
+            const scroller = document.getElementById('message-scroller');
+            scroller.scrollTop = scroller.scrollHeight;
             
             ws.send(JSON.stringify({
                 thought,
