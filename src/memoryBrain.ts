@@ -1417,11 +1417,7 @@ export async function recordInteraction(input: RecordInteractionInput, options: 
     const workspaceId = resolveWorkspaceId(db, input.workspaceId ?? options.workspaceId);
     const atom = insertAtomRow(db, input, workspaceId);
 
-    if (atom.sourceType !== 'system' || atom.modality !== 'system_derived') {
-        rebuildWorkspaceDerivatives(db, workspaceId);
-    } else {
-        rebuildWorkspaceDerivatives(db, workspaceId);
-    }
+    rebuildWorkspaceDerivatives(db, workspaceId);
 
     return atom;
 }

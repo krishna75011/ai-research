@@ -26,7 +26,7 @@ describe('local brain utilities', () => {
     });
 
     describe('buildSystemPrompt', () => {
-        const base = 'You are the Virtual Crystal AI.';
+        const base = 'You are Chronicle Memory, a local-first personal memory assistant.';
 
         test('returns the base prompt when no memory context is provided', () => {
             expect(buildSystemPrompt(base)).toBe(base);
