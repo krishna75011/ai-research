@@ -7,6 +7,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
     <title>Chronicle Memory</title>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script type="importmap">
       {
         "imports": {
@@ -685,10 +686,13 @@
             streamingText: ''
         };
 
-        marked.setOptions({
-            breaks: true,
-            gfm: true
-        });
+        function renderMarkdown(text) {
+            if (window.marked && typeof window.marked.parse === 'function') {
+                return window.marked.parse(text);
+            }
+            // Fallback: simple newline to <br> conversion if marked fails
+            return text.replace(/\n/g, '<br>');
+        }
 
         window.addEventListener('error', (event) => {
             const boundary = document.getElementById('error-boundary');
@@ -1174,6 +1178,12 @@
             ws = new WebSocket(`${wsProtocol}//${window.location.host}/stream`);
 
             ws.onopen = () => {
+                if (window.marked && typeof window.marked.setOptions === 'function') {
+                    window.marked.setOptions({
+                        breaks: true,
+                        gfm: true
+                    });
+                }
                 state.socketReady = true;
                 state.reconnectAttempts = 0;
                 sendBtn.disabled = false;
@@ -1213,7 +1223,7 @@
                     const body = document.getElementById('temp-stream-body');
                     const tempMsg = document.getElementById('temp-stream-msg');
                     if (body && data.text) {
-                        body.innerHTML = marked.parse(data.text);
+                        body.innerHTML = renderMarkdown(data.text);
                         tempMsg.querySelector('.message-role').textContent = `Assistant - ${formatDate(new Date().toISOString())}`;
                         tempMsg.id = '';
                         body.id = '';
@@ -1256,7 +1266,7 @@
                     
                     if (body) {
                         state.streamingText += data.token || '';
-                        body.innerHTML = marked.parse(state.streamingText);
+                        body.innerHTML = renderMarkdown(state.streamingText);
                     }
                     
                     const scroller = document.getElementById('message-scroller');
