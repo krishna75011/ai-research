@@ -8,6 +8,8 @@ Local Bun app for experimenting with a "Virtual Crystal" WebSocket interface, ve
 bun install
 ```
 
+Environment defaults are documented in `.env.example`. The local `.env` in this workspace already uses the active dual-model paths and runtime ledger path.
+
 Download the two expected local models:
 
 ```bash
