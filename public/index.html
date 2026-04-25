@@ -3,6 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
     <title>Chronicle Memory</title>
     <script type="importmap">
       {
@@ -29,10 +32,13 @@
             --shadow: 0 18px 42px rgba(3, 7, 18, 0.42);
             --radius: 14px;
             --radius-sm: 10px;
+            --font-main: 'Inter', system-ui, -apple-system, sans-serif;
+            --font-accent: 'Outfit', sans-serif;
         }
 
         * {
             box-sizing: border-box;
+            -webkit-font-smoothing: antialiased;
         }
 
         body {
@@ -42,7 +48,7 @@
                 radial-gradient(circle at top right, rgba(94, 124, 255, 0.12), transparent 32%),
                 linear-gradient(180deg, #0a0d15 0%, #090b12 100%);
             color: var(--text-main);
-            font-family: Inter, "Segoe UI", sans-serif;
+            font-family: var(--font-main);
         }
 
         button,
@@ -313,11 +319,47 @@
         }
 
         .message {
-            padding: 0.95rem 1rem;
-            border-radius: 14px;
-            max-width: 85%;
-            white-space: pre-wrap;
-            line-height: 1.55;
+            padding: 1.15rem 1.4rem;
+            border-radius: 18px;
+            max-width: 92%;
+            line-height: 1.62;
+            font-size: 0.96rem;
+            transition: all 0.2s ease;
+        }
+
+        .message + .message {
+            margin-top: 1rem;
+        }
+
+        .message-body p {
+            margin: 0 0 0.85rem;
+        }
+
+        .message-body p:last-child {
+            margin-bottom: 0;
+        }
+
+        .message-body ul, 
+        .message-body ol {
+            margin: 0.85rem 0;
+            padding-left: 1.4rem;
+        }
+
+        .message-body li {
+            margin-bottom: 0.45rem;
+        }
+
+        .message-body strong {
+            color: #fff;
+            font-weight: 600;
+        }
+
+        .message-body code {
+            background: rgba(255, 255, 255, 0.08);
+            padding: 0.2rem 0.4rem;
+            border-radius: 6px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 0.88em;
         }
 
         .message.user {
