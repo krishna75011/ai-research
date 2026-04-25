@@ -207,11 +207,13 @@ export async function processWaveThought(
                 '[Candidate Answer B]:',
                 gemmaOutput,
                 '',
-                'Combine the evidence and candidate answers into a final reply.',
-                'Answer the user directly using the information in the provided context.',
+                'Combine the evidence and candidate answers into a single, clean assistant response.',
+                'Answer the user directly and conversationally.',
+                'DO NOT repeat the [User Input] or [Candidate Answer] headers.',
+                'DO NOT include labels like "User:" or "Assistant:" in your output.',
                 'Do not say "I don\'t know" if the context provides the answer.',
                 'Avoid technical IDs or "Atom #" prefixes.',
-                'Return ONLY the final conversation-ready text.'
+                'Return ONLY the final conversation-ready text, starting with the answer itself.'
             ].join('\n');
 
             const synthesizedResponse = await synthesisSession.prompt(mergePrompt, {
