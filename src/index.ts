@@ -1,6 +1,7 @@
 import { staticPlugin } from '@elysiajs/static';
 import { Elysia } from 'elysia';
 import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
+import { summarizeAcousticWave } from './acousticWave';
 import { processWaveThought } from './localBrain';
 import { textToWave } from './modulator';
 import { parseStreamMessage } from './protocol';
@@ -8,12 +9,15 @@ import { recallResonance, saveThoughtWave, triggerEntropy } from './resonanceLed
 import { simulateInterference } from './virtualCrystal';
 
 const THOUGHT_THROTTLE_MS = 1500;
+const ACOUSTIC_THROTTLE_MS = 2500;
 
 if (!existsSync('logs')) {
     mkdirSync('logs', { recursive: true });
 }
 
 const clientThrottles = new Map<string, number>();
+const clientAcousticThrottles = new Map<string, number>();
+const activeAcousticClients = new Set<string>();
 
 const app = new Elysia()
     .use(staticPlugin())
@@ -35,6 +39,8 @@ const app = new Elysia()
         },
         close(ws) {
             clientThrottles.delete(ws.id);
+            clientAcousticThrottles.delete(ws.id);
+            activeAcousticClients.delete(ws.id);
         },
         async message(ws, message: unknown) {
             const start = performance.now();
@@ -85,12 +91,51 @@ const app = new Elysia()
                 }
 
                 const interference = simulateInterference(parsedMessage.waveA, parsedMessage.waveB);
-                ws.send({
-                    status: 'processed',
-                    samples: interference.length,
-                    vector: interference,
-                    timestamp: Date.now()
-                });
+
+                if (parsedMessage.source !== 'acoustic-uplink') {
+                    ws.send({
+                        status: 'processed',
+                        samples: interference.length,
+                        vector: interference,
+                        timestamp: Date.now()
+                    });
+                    return;
+                }
+
+                const now = Date.now();
+                const lastAcousticThought = clientAcousticThrottles.get(ws.id) || 0;
+                if (activeAcousticClients.has(ws.id) || now - lastAcousticThought < ACOUSTIC_THROTTLE_MS) {
+                    return;
+                }
+
+                clientAcousticThrottles.set(ws.id, now);
+                activeAcousticClients.add(ws.id);
+
+                try {
+                    const acousticSummary = summarizeAcousticWave(parsedMessage.waveA, interference);
+                    const synthesizedMemoryContext = await recallResonance(interference);
+                    if (synthesizedMemoryContext) {
+                        console.log('Synthesized memory context activated for acoustic uplink.');
+                    }
+
+                    await saveThoughtWave(acousticSummary.memoryText, interference);
+
+                    const aiResponse = await processWaveThought(acousticSummary.prompt, synthesizedMemoryContext);
+                    const latencyMs = (performance.now() - start).toFixed(2);
+
+                    ws.send({
+                        status: 'thought_processed',
+                        response: aiResponse,
+                        vector: interference,
+                        memoryActive: Boolean(synthesizedMemoryContext),
+                        context: synthesizedMemoryContext || null,
+                        inputMode: 'acoustic-uplink',
+                        latencyMs,
+                        timestamp: Date.now()
+                    });
+                } finally {
+                    activeAcousticClients.delete(ws.id);
+                }
             } catch (err: unknown) {
                 const errorMessage = err instanceof Error ? err.message : String(err);
                 console.error('Wave processing error:', errorMessage);

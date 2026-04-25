@@ -3,7 +3,7 @@ const MAX_WAVE_SAMPLES = 2048;
 
 export type StreamMessage =
     | { kind: 'thought'; thought: string }
-    | { kind: 'wave'; waveA: number[]; waveB: number[] };
+    | { kind: 'wave'; waveA: number[]; waveB: number[]; source?: string };
 
 export function sanitizeThought(value: string): string {
     return value.trim().slice(0, MAX_THOUGHT_LENGTH).replace(/[<>]/g, '');
@@ -45,13 +45,15 @@ export function parseStreamMessage(message: unknown): StreamMessage | null {
 
     const waveA = parseWaveArray(parsed.waveA);
     if (waveA) {
+        const source = typeof parsed.source === 'string' ? parsed.source : undefined;
+
         if ('waveB' in parsed && parsed.waveB !== undefined) {
             const waveB = parseWaveArray(parsed.waveB);
-            return waveB ? { kind: 'wave', waveA, waveB } : null;
+            return waveB ? { kind: 'wave', waveA, waveB, source } : null;
         }
 
         const waveB = Array.from({ length: waveA.length }, () => 0);
-        return { kind: 'wave', waveA, waveB };
+        return { kind: 'wave', waveA, waveB, source };
     }
 
     return null;

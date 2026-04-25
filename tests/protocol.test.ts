@@ -23,10 +23,11 @@ describe('stream protocol', () => {
     });
 
     test('accepts acoustic waveA-only messages by synthesizing a zero waveB', () => {
-        expect(parseStreamMessage({ waveA: [0.25, 0.5] })).toEqual({
+        expect(parseStreamMessage({ waveA: [0.25, 0.5], source: 'acoustic-uplink' })).toEqual({
             kind: 'wave',
             waveA: [0.25, 0.5],
-            waveB: [0, 0]
+            waveB: [0, 0],
+            source: 'acoustic-uplink'
         });
     });
 

@@ -413,7 +413,8 @@
         let microphoneEnabled = false;
         let microphoneFrameId = 0;
         let lastMicrophoneSend = 0;
-        const MICROPHONE_SEND_INTERVAL_MS = 250;
+        let acousticRequestPending = false;
+        const MICROPHONE_SEND_INTERVAL_MS = 1200;
         const SPEECH_ENERGY_THRESHOLD = 8;
         
         // 4 Octaves of C-Major Pentatonic (130.81Hz to 1046.50Hz)
@@ -455,6 +456,7 @@
 
         function stopAcousticUplink() {
             microphoneEnabled = false;
+            acousticRequestPending = false;
             micBtn.classList.remove('active');
 
             if (microphoneFrameId) {
@@ -485,11 +487,18 @@
             const averageEnergy = microphoneData.reduce((sum, value) => sum + value, 0) / microphoneData.length;
             const now = performance.now();
 
-            if (averageEnergy > SPEECH_ENERGY_THRESHOLD && socketReady && now - lastMicrophoneSend >= MICROPHONE_SEND_INTERVAL_MS) {
+            if (
+                averageEnergy > SPEECH_ENERGY_THRESHOLD &&
+                socketReady &&
+                !acousticRequestPending &&
+                now - lastMicrophoneSend >= MICROPHONE_SEND_INTERVAL_MS
+            ) {
                 const waveA = normalizeFrequencyToPhase(microphoneData);
+                acousticRequestPending = true;
                 ws.send(JSON.stringify({ waveA, source: 'acoustic-uplink' }));
                 lastMicrophoneSend = now;
-                statLatency.innerText = 'Uplink...';
+                statLatency.innerText = 'Listening...';
+                setSystemStatus('Acoustic Processing');
             }
 
             microphoneFrameId = requestAnimationFrame(sampleAcousticUplink);
@@ -626,6 +635,11 @@
         ws.onmessage = (msg) => {
             const data = JSON.parse(msg.data);
             if (data.status === 'thought_processed') {
+                if (data.inputMode === 'acoustic-uplink') {
+                    acousticRequestPending = false;
+                    setSystemStatus(microphoneEnabled ? 'Acoustic Uplink' : 'Dual-Brain: Active');
+                }
+
                 responseText.innerText = data.response;
                 
                 if (data.memoryActive) {
@@ -644,6 +658,10 @@
                 draw3D(data.vector);
                 playHolographicChord(data.vector);
             } else if (data.status === 'error') {
+                acousticRequestPending = false;
+                if (microphoneEnabled) {
+                    setSystemStatus('Acoustic Uplink');
+                }
                 responseText.innerText = data.message;
                 memoryBadge.style.display = 'none';
                 overlay.style.display = 'block';
