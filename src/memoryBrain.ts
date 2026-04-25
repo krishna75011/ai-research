@@ -1242,8 +1242,9 @@ function rankBranches(branches: EvidenceBranch[], queryText: string): Array<{ br
 }
 
 function formatAtomForContext(atom: MemoryAtom): string {
-    const sourceLabel = atom.sourceKind === 'user' ? 'User' : 'Assistant';
-    return `[${atom.createdAt}] ${sourceLabel}: ${excerpt(atom.contentText, 300)}`;
+    const timestamp = new Date(atom.createdAt).toLocaleString();
+    const role = atom.sourceKind === 'user' ? 'User' : 'Assistant';
+    return `[${timestamp}] ${role}: ${atom.contentText}`;
 }
 
 function formatStandingWave(wave: StandingWave): string {
@@ -1657,11 +1658,10 @@ export async function probeMemory(queryText: string, queryWaveSignature: WaveUni
         .filter(([, grouped]) => grouped.length > 1)
         .map(([topicKey, grouped]) => formatBranchWarning(topicKey, grouped));
 
-    const contextSections: string[] = [`[Memory Mode]: ${MEMORY_MODE}`, `[Workspace]: ${mapWorkspace(getWorkspaceRow(db, workspaceId)).name}`];
+    const contextSections: string[] = [`## MEMORY CONTEXT FROM PREVIOUS CONVERSATIONS AND FILES`];
     const citations: MemoryCitation[] = [];
 
     if (topAtoms.length > 0) {
-        contextSections.push('[Evidence Recall]');
         for (const ranked of topAtoms) {
             contextSections.push(formatAtomForContext(ranked.atom));
             citations.push({

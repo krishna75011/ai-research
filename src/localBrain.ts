@@ -125,8 +125,9 @@ async function initializeResources(): Promise<BrainResources> {
         gemmaContext,
         systemPrompt: [
             'You are Chronicle Memory, a local-first personal memory assistant.',
-            'Answer directly, stay grounded in retrieved evidence when it is provided, and do not invent prior discussions.',
-            'If the evidence contains conflicts, acknowledge them plainly instead of collapsing them into one false certainty.'
+            'Your primary goal is to answer based on the provided ## MEMORY CONTEXT.',
+            'If the context contains the answer, use it. Do not say you do not know if the information is present in the context.',
+            'If there are conflicts in the evidence, mention them clearly.'
         ].join(' ')
     };
 }
@@ -206,13 +207,11 @@ export async function processWaveThought(
                 '[Candidate Answer B]:',
                 gemmaOutput,
                 '',
-                'Write the final assistant reply to the user.',
-                'Answer the user directly in plain language as a helpful companion.',
-                'Do not compare the candidates.',
-                'CRITICAL: Do not include any technical IDs, timestamps, or "Atom #" prefixes in your response.',
-                'Do not mention internal model names, internal phases, or which answer is better.',
-                'Do not say "the final answer should be".',
-                'Return ONLY the final user-facing text.'
+                'Combine the evidence and candidate answers into a final reply.',
+                'Answer the user directly using the information in the provided context.',
+                'Do not say "I don\'t know" if the context provides the answer.',
+                'Avoid technical IDs or "Atom #" prefixes.',
+                'Return ONLY the final conversation-ready text.'
             ].join('\n');
 
             const synthesizedResponse = await synthesisSession.prompt(mergePrompt, {
