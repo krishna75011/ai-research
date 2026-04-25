@@ -231,6 +231,23 @@ interface TimeAnchor {
     prefersPast: boolean;
 }
 
+const ACOUSTIC_QUERY_KEYWORDS = [
+    'acoustic',
+    'audio',
+    'sound',
+    'voice',
+    'vocal',
+    'microphone',
+    'mic',
+    'tone',
+    'pitch',
+    'speech',
+    'frequency',
+    'frequencies',
+    'uplink',
+    'resonance signature'
+] as const;
+
 type WorkspaceRow = {
     id: string;
     name: string;
@@ -437,6 +454,20 @@ function splitSentences(text: string): string[] {
         .split(/[\n\r]+|(?<=[.!?])\s+/)
         .map(normalizeWhitespace)
         .filter(Boolean);
+}
+
+function queryAllowsAcousticRecall(queryText: string): boolean {
+    const normalized = normalizeText(queryText);
+    return ACOUSTIC_QUERY_KEYWORDS.some((keyword) => normalized.includes(keyword));
+}
+
+function isAcousticAtom(atom: MemoryAtom, atomById: Map<number, MemoryAtom>): boolean {
+    if (atom.sourceType === 'acoustic' || atom.modality === 'acoustic_summary') {
+        return true;
+    }
+
+    const parent = atom.parentAtomId ? atomById.get(atom.parentAtomId) : null;
+    return Boolean(parent && isAcousticAtom(parent, atomById));
 }
 
 function inferSourceType(input: RecordInteractionInput): MemorySourceType {
@@ -1155,13 +1186,15 @@ function ensureLegacyImported(db: Database, options: MemoryBrainOptions = {}) {
     }
 }
 
-function rankAtoms(atoms: MemoryAtom[], queryText: string, queryWaveSignature: WaveUnit[]): Array<{ atom: MemoryAtom; score: number }> {
+function rankAtoms(atoms: MemoryAtom[], queryText: string, queryWaveSignature: WaveUnit[], allowAcoustic: boolean): Array<{ atom: MemoryAtom; score: number }> {
     const queryTokens = tokenize(queryText);
     const queryEntities = extractEntityKeys(queryText);
     const timeAnchor = inferTimeAnchor(queryText);
+    const atomById = new Map(atoms.map((atom) => [atom.id, atom]));
 
     return atoms
         .filter((atom) => atom.recallState === 'active' && !shouldSuppressAtomFromRecall(atom))
+        .filter((atom) => allowAcoustic || !isAcousticAtom(atom, atomById))
         .map((atom) => {
             const lexical = overlapScore(queryTokens, tokenize(atom.contentText));
             const entity = overlapScore(queryEntities, atom.entityKeys);
@@ -1178,11 +1211,12 @@ function rankAtoms(atoms: MemoryAtom[], queryText: string, queryWaveSignature: W
         .sort((left, right) => right.score - left.score);
 }
 
-function rankStandingWaves(waves: StandingWave[], queryText: string, queryWaveSignature: WaveUnit[]): Array<{ wave: StandingWave; score: number }> {
+function rankStandingWaves(waves: StandingWave[], queryText: string, queryWaveSignature: WaveUnit[], allowAcoustic: boolean): Array<{ wave: StandingWave; score: number }> {
     const queryTokens = tokenize(queryText);
     const queryEntities = extractEntityKeys(queryText);
 
     return waves
+        .filter((wave) => allowAcoustic || !wave.kind.startsWith('acoustic_'))
         .map((wave) => {
             const lexical = overlapScore(queryTokens, tokenize(wave.canonicalText));
             const entity = overlapScore(queryEntities, wave.entityKeys);
@@ -1238,28 +1272,54 @@ function buildEvidenceGroups(citations: MemoryCitation[]): ProbeEvidenceGroups {
     };
 }
 
-function getTimelineNeighbors(db: Database, workspaceId: string, atomId: number): MemoryAtom[] {
+function getTimelineNeighbors(db: Database, workspaceId: string, atomId: number, allowAcoustic: boolean): MemoryAtom[] {
     const neighbors: MemoryAtom[] = [];
 
-    const previous = db.query(`
-        SELECT * FROM memory_atoms
-        WHERE workspace_id = ?
-          AND id < ?
-          AND recall_state = 'active'
-          AND source_type != 'file'
-        ORDER BY id DESC
-        LIMIT 1
-    `).get(workspaceId, atomId) as AtomRow | null;
+    const previous = allowAcoustic
+        ? db.query(`
+            SELECT * FROM memory_atoms
+            WHERE workspace_id = ?
+              AND id < ?
+              AND recall_state = 'active'
+              AND source_type != 'file'
+            ORDER BY id DESC
+            LIMIT 1
+        `).get(workspaceId, atomId) as AtomRow | null
+        : db.query(`
+            SELECT child.* FROM memory_atoms child
+            LEFT JOIN memory_atoms parent ON parent.id = child.parent_atom_id
+            WHERE child.workspace_id = ?
+              AND child.id < ?
+              AND child.recall_state = 'active'
+              AND child.source_type != 'file'
+              AND child.source_type != 'acoustic'
+              AND COALESCE(parent.source_type, '') != 'acoustic'
+            ORDER BY child.id DESC
+            LIMIT 1
+        `).get(workspaceId, atomId) as AtomRow | null;
 
-    const next = db.query(`
-        SELECT * FROM memory_atoms
-        WHERE workspace_id = ?
-          AND id > ?
-          AND recall_state = 'active'
-          AND source_type != 'file'
-        ORDER BY id ASC
-        LIMIT 1
-    `).get(workspaceId, atomId) as AtomRow | null;
+    const next = allowAcoustic
+        ? db.query(`
+            SELECT * FROM memory_atoms
+            WHERE workspace_id = ?
+              AND id > ?
+              AND recall_state = 'active'
+              AND source_type != 'file'
+            ORDER BY id ASC
+            LIMIT 1
+        `).get(workspaceId, atomId) as AtomRow | null
+        : db.query(`
+            SELECT child.* FROM memory_atoms child
+            LEFT JOIN memory_atoms parent ON parent.id = child.parent_atom_id
+            WHERE child.workspace_id = ?
+              AND child.id > ?
+              AND child.recall_state = 'active'
+              AND child.source_type != 'file'
+              AND child.source_type != 'acoustic'
+              AND COALESCE(parent.source_type, '') != 'acoustic'
+            ORDER BY child.id ASC
+            LIMIT 1
+        `).get(workspaceId, atomId) as AtomRow | null;
 
     if (previous) {
         const atom = mapAtom(previous);
@@ -1608,14 +1668,15 @@ export async function probeMemory(queryText: string, queryWaveSignature: WaveUni
     const atoms = atomRows.map(mapAtom);
     const standingWaves = standingWaveRows.map(mapStandingWave);
     const branches = branchRows.map(mapEvidenceBranch);
+    const allowAcoustic = queryAllowsAcousticRecall(queryText);
 
-    const topAtoms = rankAtoms(atoms, queryText, queryWaveSignature).slice(0, 4);
-    const topStandingWaves = rankStandingWaves(standingWaves, queryText, queryWaveSignature).slice(0, 3);
+    const topAtoms = rankAtoms(atoms, queryText, queryWaveSignature, allowAcoustic).slice(0, 4);
+    const topStandingWaves = rankStandingWaves(standingWaves, queryText, queryWaveSignature, allowAcoustic).slice(0, 3);
     const topBranches = rankBranches(branches, queryText).slice(0, 4);
 
     const timelineAnchors = new Map<number, MemoryAtom>();
     for (const ranked of topAtoms.slice(0, 2)) {
-        for (const neighbor of getTimelineNeighbors(db, workspaceId, ranked.atom.id)) {
+        for (const neighbor of getTimelineNeighbors(db, workspaceId, ranked.atom.id, allowAcoustic)) {
             if (!topAtoms.some((candidate) => candidate.atom.id === neighbor.id)) {
                 timelineAnchors.set(neighbor.id, neighbor);
             }

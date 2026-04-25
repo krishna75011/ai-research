@@ -257,6 +257,11 @@ describe('memory brain', () => {
         expect(visibleTimeline).not.toContain(acousticReply);
         expect(snapshot.stats.totalMemories).toBe(2);
         expect(snapshot.stats.conversationTurns).toBe(2);
+
+        const textProbe = await probeMemory(textPrompt, vectorFor(textPrompt), { brainPath, legacyLedgerPath });
+        expect(textProbe.citations.some((citation) => citation.sourceType === 'acoustic')).toBe(false);
+        expect(textProbe.matchedStandingWaveIds).toHaveLength(0);
+        expect(textProbe.assembledContext ?? '').not.toContain('Acoustic Uplink');
     });
 
     test('keeps correct support atom ids on conflicting evidence branches', async () => {
