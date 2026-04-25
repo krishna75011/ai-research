@@ -34,3 +34,4 @@ matrix.crystal
 # Finder (MacOS) folder config
 .DS_Store
 models
+.claude
