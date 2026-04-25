@@ -1196,7 +1196,7 @@
                         document.getElementById('empty-state').style.display = 'none';
                     }
                     const body = document.getElementById('temp-stream-body');
-                    body.textContent += data.chunk;
+                    body.textContent += data.token || '';
                     
                     const scroller = document.getElementById('message-scroller');
                     scroller.scrollTop = scroller.scrollHeight;
