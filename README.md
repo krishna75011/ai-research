@@ -1,6 +1,18 @@
 # ai-research
 
-Local Bun app for experimenting with a "Virtual Crystal" WebSocket interface, vector-style memory, a Three.js dashboard, and local GGUF inference through `node-llama-cpp`.
+Local Bun app for experimenting with a memory-backed AI console. The browser sends typed prompts or live acoustic wave input over WebSocket, the backend probes a SQLite memory brain for evidence-backed recall, and two local GGUF models generate the final response.
+
+## What Changed
+
+- `logs/memory-brain.sqlite` is now the canonical long-term memory store.
+- `matrix.crystal` is legacy input only. Existing ledger rows are imported once into the memory brain and then left alone.
+- Every interaction is stored as immutable `MemoryAtom` records.
+- Repeated patterns consolidate into `StandingWave` records.
+- Conflicting claims are preserved as `EvidenceBranch` records instead of being overwritten.
+- `thought_processed` WebSocket responses now include:
+  - `memoryCitations`
+  - `memoryMode`
+  - `branchWarnings`
 
 ## Setup
 
@@ -8,7 +20,7 @@ Local Bun app for experimenting with a "Virtual Crystal" WebSocket interface, ve
 bun install
 ```
 
-Environment defaults are documented in `.env.example`. The local `.env` in this workspace already uses the active dual-model paths and runtime ledger path.
+Environment defaults live in `.env.example`.
 
 Download the two expected local models:
 
@@ -17,12 +29,15 @@ bun run download:qwen
 bun run download:gemma
 ```
 
-By default the app expects:
+Default model paths:
 
 - `models/Qwen2-0.5B-Instruct-Q4_K_M.gguf`
 - `models/gemma-4-E2B-it-Q4_K_M.gguf`
 
-You can override those paths with `QWEN_MODEL_PATH` and `GEMMA_MODEL_PATH`.
+Override them with:
+
+- `QWEN_MODEL_PATH`
+- `GEMMA_MODEL_PATH`
 
 ## Run
 
@@ -30,7 +45,7 @@ You can override those paths with `QWEN_MODEL_PATH` and `GEMMA_MODEL_PATH`.
 bun run dev
 ```
 
-The app listens on:
+Endpoints:
 
 - HTTP dashboard: `http://localhost:3000`
 - WebSocket stream: `ws://localhost:3000/stream`
@@ -44,6 +59,15 @@ bun test
 
 ## Runtime Data
 
-Live resonance memory is stored in `logs/matrix.crystal` by default. The root-level `matrix.crystal` file is treated as a legacy seed and is copied into `logs/` on first run if no runtime ledger exists.
+Primary runtime data:
 
-Set `MATRIX_LEDGER_PATH` or `LEDGER_PATH` to use a different ledger path.
+- `MEMORY_BRAIN_PATH` defaults to `./logs/memory-brain.sqlite`
+
+Legacy import sources:
+
+- `MATRIX_LEDGER_PATH`
+- `LEDGER_PATH`
+- root `matrix.crystal`
+- `./logs/matrix.crystal`
+
+The importer records migration markers inside the SQLite store, so the same legacy ledger is not imported repeatedly.

@@ -83,7 +83,7 @@ function createSession(context: LlamaContext, systemPrompt: string): LlamaChatSe
 export function buildSystemPrompt(basePrompt: string, memoryContext?: string | null): string {
     if (!memoryContext) return basePrompt;
 
-    return `${basePrompt}\n\n${memoryContext}\nUse these synthesized memories as cross-reference context when forming the response.`;
+    return `${basePrompt}\n\n${memoryContext}\nUse this retrieved memory evidence as context. Prefer cited recall over speculation, and preserve conflicts when branch warnings are present.`;
 }
 
 export async function processWaveThought(input: string, memoryContext?: string | null, useDualBrain = true): Promise<string> {

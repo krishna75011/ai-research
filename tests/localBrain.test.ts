@@ -34,13 +34,13 @@ describe('local brain utilities', () => {
             expect(buildSystemPrompt(base, '')).toBe(base);
         });
 
-        test('appends memory context with cross-reference instruction', () => {
+        test('appends memory context with evidence-first instruction', () => {
             const memory = '[Synthesized Memory Alpha]: crystal frequency is fibonacci';
             const result = buildSystemPrompt(base, memory);
 
             expect(result).toContain(base);
             expect(result).toContain(memory);
-            expect(result).toContain('cross-reference context');
+            expect(result).toContain('retrieved memory evidence');
         });
 
         test('preserves the base prompt at the start', () => {

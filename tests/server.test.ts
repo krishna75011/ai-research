@@ -12,7 +12,7 @@ import { simulateInterference } from '../src/virtualCrystal';
  */
 
 const TEST_PORT = 9877;
-let server: ReturnType<Elysia['listen']>;
+let server: { stop(): void };
 
 function createTestServer() {
     return new Elysia()

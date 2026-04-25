@@ -2,11 +2,11 @@ import { staticPlugin } from '@elysiajs/static';
 import { Elysia } from 'elysia';
 import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
 import { summarizeAcousticWave } from './acousticWave';
+import { probeMemory, recordInteraction } from './memoryBrain';
 import { processWaveThought } from './localBrain';
 import { textToWave } from './modulator';
 import { parseStreamMessage } from './protocol';
-import { recallResonance, saveThoughtWave, triggerEntropy } from './resonanceLedger';
-import { simulateInterference } from './virtualCrystal';
+import { simulateInterference, type WaveUnit } from './virtualCrystal';
 
 const THOUGHT_THROTTLE_MS = 1500;
 const ACOUSTIC_THROTTLE_MS = 2500;
@@ -19,6 +19,30 @@ const clientThrottles = new Map<string, number>();
 const clientAcousticThrottles = new Map<string, number>();
 const activeAcousticClients = new Set<string>();
 const activeConnections = new Set<{ close(): void }>();
+
+function createTextVector(text: string): WaveUnit[] {
+    const waveA = textToWave(text);
+    const waveB = waveA.map((phase) => (phase + Math.PI / 2) % (Math.PI * 2));
+    return simulateInterference(waveA, waveB);
+}
+
+async function recordAssistantMemory(response: string, sessionId: string, turnId: string, parentAtomId: number, inputMode: 'text' | 'acoustic-uplink') {
+    await recordInteraction({
+        contentText: response,
+        waveSignature: createTextVector(response),
+        sourceKind: 'assistant',
+        modality: 'system_derived',
+        sessionId,
+        turnId,
+        parentAtomId,
+        salience: 0.78,
+        confidence: 0.62,
+        rawPayload: {
+            inputMode,
+            response
+        }
+    });
+}
 
 const app = new Elysia()
     .use(staticPlugin())
@@ -64,28 +88,38 @@ const app = new Elysia()
                     }
                     clientThrottles.set(ws.id, now);
 
-                    console.log(`\nProcessing thought: "${parsedMessage.thought.substring(0, 50)}..."`);
+                    const turnId = crypto.randomUUID();
+                    const thoughtVector = createTextVector(parsedMessage.thought);
+                    const memoryProbe = await probeMemory(parsedMessage.thought, thoughtVector);
 
-                    const waveA = textToWave(parsedMessage.thought);
-                    const waveB = waveA.map(phase => (phase + Math.PI / 2) % (Math.PI * 2));
-                    const holographicVector = simulateInterference(waveA, waveB);
+                    const userAtom = await recordInteraction({
+                        contentText: parsedMessage.thought,
+                        waveSignature: thoughtVector,
+                        sourceKind: 'user',
+                        modality: 'text',
+                        sessionId: ws.id,
+                        turnId,
+                        salience: 0.84,
+                        confidence: 0.82,
+                        rawPayload: {
+                            thought: parsedMessage.thought
+                        }
+                    });
 
-                    const synthesizedMemoryContext = await recallResonance(holographicVector);
-                    if (synthesizedMemoryContext) {
-                        console.log('Synthesized memory context activated.');
-                    }
+                    const aiResponse = await processWaveThought(parsedMessage.thought, memoryProbe.assembledContext);
+                    await recordAssistantMemory(aiResponse, ws.id, turnId, userAtom.id, 'text');
 
-                    await saveThoughtWave(parsedMessage.thought, holographicVector);
-
-                    const aiResponse = await processWaveThought(parsedMessage.thought, synthesizedMemoryContext);
                     const latencyMs = (performance.now() - start).toFixed(2);
 
                     ws.send({
                         status: 'thought_processed',
                         response: aiResponse,
-                        vector: holographicVector,
-                        memoryActive: Boolean(synthesizedMemoryContext),
-                        context: synthesizedMemoryContext || null,
+                        vector: thoughtVector,
+                        memoryActive: memoryProbe.citations.length > 0,
+                        context: memoryProbe.assembledContext,
+                        memoryCitations: memoryProbe.citations,
+                        memoryMode: memoryProbe.memoryMode,
+                        branchWarnings: memoryProbe.branchWarnings,
                         latencyMs,
                         timestamp: Date.now()
                     });
@@ -115,23 +149,40 @@ const app = new Elysia()
                 activeAcousticClients.add(ws.id);
 
                 try {
+                    const turnId = crypto.randomUUID();
                     const acousticSummary = summarizeAcousticWave(parsedMessage.waveA, interference);
-                    const synthesizedMemoryContext = await recallResonance(interference);
-                    if (synthesizedMemoryContext) {
-                        console.log('Synthesized memory context activated for acoustic uplink.');
-                    }
+                    const memoryProbe = await probeMemory(acousticSummary.prompt, interference);
 
-                    await saveThoughtWave(acousticSummary.memoryText, interference);
+                    const userAtom = await recordInteraction({
+                        contentText: acousticSummary.memoryText,
+                        waveSignature: interference,
+                        sourceKind: 'user',
+                        modality: 'acoustic_summary',
+                        sessionId: ws.id,
+                        turnId,
+                        salience: 0.6,
+                        confidence: 0.48,
+                        rawPayload: {
+                            source: 'acoustic-uplink',
+                            waveA: parsedMessage.waveA,
+                            summary: acousticSummary
+                        }
+                    });
 
-                    const aiResponse = await processWaveThought(acousticSummary.prompt, synthesizedMemoryContext);
+                    const aiResponse = await processWaveThought(acousticSummary.prompt, memoryProbe.assembledContext);
+                    await recordAssistantMemory(aiResponse, ws.id, turnId, userAtom.id, 'acoustic-uplink');
+
                     const latencyMs = (performance.now() - start).toFixed(2);
 
                     ws.send({
                         status: 'thought_processed',
                         response: aiResponse,
                         vector: interference,
-                        memoryActive: Boolean(synthesizedMemoryContext),
-                        context: synthesizedMemoryContext || null,
+                        memoryActive: memoryProbe.citations.length > 0,
+                        context: memoryProbe.assembledContext,
+                        memoryCitations: memoryProbe.citations,
+                        memoryMode: memoryProbe.memoryMode,
+                        branchWarnings: memoryProbe.branchWarnings,
                         inputMode: 'acoustic-uplink',
                         latencyMs,
                         timestamp: Date.now()
@@ -148,11 +199,8 @@ const app = new Elysia()
     })
     .listen(3000);
 
-const entropyInterval = setInterval(triggerEntropy, 24 * 60 * 60 * 1000);
-
 process.on('SIGINT', () => {
     console.log('\nVirtual Crystal powering down.');
-    clearInterval(entropyInterval);
     for (const ws of activeConnections) {
         ws.close();
     }
