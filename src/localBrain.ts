@@ -54,10 +54,11 @@ function scoreCandidateResponse(value: string | null | undefined): number {
     if (text.length <= 240) score += 1;
     if (/[.!?]$/.test(text)) score += 0.5;
     if (/^(hi|hello|hey)\b/i.test(text)) score += 0.5;
+    if (text.length > 240) score += 4; // Reward detail/evidence
     if (/\b(qwen|gemma)\b/i.test(text)) score -= 8;
     if (/\b(response is|final answer should|therefore)\b/i.test(text)) score -= 4;
-    if (/\b(i (am sorry|don't know|cannot recall|do not have))\b/i.test(text)) score -= 6;
-    if (text.includes('### At')) score -= 10; // Penalize echoing the new transcript format
+    if (/\b(i (am sorry|don't know|cannot recall|do not have|does not contain))\b/i.test(text)) score -= 12; // Heavy penalty for false refusal
+    if (text.includes('### At')) score -= 10; 
 
     return score;
 }
@@ -119,7 +120,7 @@ async function initializeResources(): Promise<BrainResources> {
     const gemmaModel = await llama.loadModel({ modelPath: gemmaPath });
     const gemmaContext = await gemmaModel.createContext({
         contextSize: 2048,
-        sequences: 2,
+        sequences: 3,
         threads: 4
     });
 
@@ -203,9 +204,9 @@ export async function processWaveThought(
             ]);
 
             // Release initial sessions before starting synthesis
-            qwenSession.dispose({ disposeSequence: true });
+            await qwenSession.dispose({ disposeSequence: true });
             qwenSession = null;
-            gemmaSession.dispose({ disposeSequence: true });
+            await gemmaSession.dispose({ disposeSequence: true });
             gemmaSession = null;
 
             synthesisSession = createSession(gemmaContext, synthesisSystemPrompt);
@@ -237,9 +238,9 @@ export async function processWaveThought(
                 gemmaOutput
             };
         } finally {
-            qwenSession?.dispose({ disposeSequence: true });
-            gemmaSession?.dispose({ disposeSequence: true });
-            synthesisSession?.dispose({ disposeSequence: true });
+            if (qwenSession) await qwenSession.dispose({ disposeSequence: true });
+            if (gemmaSession) await gemmaSession.dispose({ disposeSequence: true });
+            if (synthesisSession) await synthesisSession.dispose({ disposeSequence: true });
         }
     });
 }
