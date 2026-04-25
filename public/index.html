@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Optical Dashboard | Virtual Crystal</title>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "/public/three.module.js"
+        }
+      }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            /* Default Cyberpunk Theme */
+            --primary: #00f2ff;
+            --secondary: #7000ff;
+            --accent: #ff00c8;
+            --bg: #020205;
+            --glass: rgba(15, 15, 25, 0.6);
+            --border: rgba(0, 242, 255, 0.2);
+            --text-main: #fff;
+            --text-dim: #eee;
+            --font-family: 'Outfit', sans-serif;
+        }
+
+        body.theme-watercolor {
+            --primary: #4a90e2;
+            --secondary: #50e3c2;
+            --accent: #f5a623;
+            --bg: #f8f9fa;
+            --glass: rgba(255, 255, 255, 0.7);
+            --border: rgba(74, 144, 226, 0.3);
+            --text-main: #2c3e50;
+            --text-dim: #34495e;
+            --font-family: 'Georgia', serif;
+            background-image: url('data:image/svg+xml;utf8,<svg width="100" height="100" xmlns="http://www.w3.org/2000/svg"><filter id="noise"><feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="4" stitchTiles="stitch"/></filter><rect width="100" height="100" filter="url(%23noise)" opacity="0.05"/></svg>');
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text-main);
+            font-family: var(--font-family);
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+            transition: all 0.5s ease;
+        }
+
+        /* ... existing styles updated with CSS vars ... */
+        #dashboard-header {
+            background: var(--glass);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border);
+            padding: 1rem 2.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 100;
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        .logo-container {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .logo {
+            font-size: 1.4rem;
+            font-weight: 700;
+            background: linear-gradient(to right, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: 4px;
+            text-transform: uppercase;
+        }
+
+        .system-status {
+            font-size: 0.65rem;
+            color: var(--primary);
+            border: 1px solid var(--primary);
+            padding: 2px 8px;
+            border-radius: 4px;
+            letter-spacing: 1px;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        .controls {
+            display: flex;
+            gap: 1.5rem;
+            align-items: center;
+        }
+
+        .input-group {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+
+        input {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border);
+            color: var(--text-main);
+            padding: 0.9rem 1.5rem;
+            width: 400px;
+            border-radius: 100px;
+            outline: none;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            font-size: 0.9rem;
+        }
+
+        body.theme-watercolor input {
+            background: rgba(0, 0, 0, 0.02);
+            border: 1px solid rgba(0,0,0,0.1);
+        }
+
+        input:focus {
+            width: 450px;
+            background: rgba(255, 255, 255, 0.07);
+            border-color: var(--primary);
+            box-shadow: 0 0 30px rgba(0, 242, 255, 0.15);
+        }
+
+        #modulate-btn {
+            background: linear-gradient(45deg, var(--primary), var(--secondary));
+            color: #000;
+            border: none;
+            padding: 0.9rem 2rem;
+            cursor: pointer;
+            font-weight: 700;
+            border-radius: 100px;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-size: 0.8rem;
+        }
+
+        body.theme-watercolor #modulate-btn {
+            color: #fff;
+        }
+
+        #modulate-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 25px rgba(0, 242, 255, 0.5);
+        }
+
+        #modulate-btn:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        #audio-btn,
+        #mic-btn {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-main);
+            border: 1px solid var(--border);
+            padding: 0.6rem 1.2rem;
+            border-radius: 12px;
+            cursor: pointer;
+            font-size: 0.75rem;
+            font-weight: 700;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        #audio-btn.active,
+        #mic-btn.active {
+            background: var(--primary);
+            color: #000;
+            border-color: var(--primary);
+        }
+
+        #mic-btn:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+
+        select {
+            background: rgba(0, 0, 0, 0.5);
+            color: var(--text-main);
+            border: 1px solid var(--border);
+            padding: 0.5rem 1rem;
+            border-radius: 10px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            outline: none;
+            cursor: pointer;
+            backdrop-filter: blur(10px);
+            -webkit-appearance: none;
+            appearance: none;
+        }
+
+        body.theme-watercolor select {
+            background: rgba(255, 255, 255, 0.6);
+            color: var(--text-main);
+        }
+
+        select option {
+            background: #020205;
+            color: #fff;
+            padding: 10px;
+        }
+
+        body.theme-watercolor select option {
+            background: #f8f9fa;
+            color: #2c3e50;
+        }
+
+        #visualizer-host {
+            flex-grow: 1;
+            position: relative;
+            display: flex;
+        }
+
+        /* Metabolism Panel */
+        #metabolism-panel {
+            position: absolute;
+            top: 2.5rem;
+            right: 2.5rem;
+            width: 280px;
+            background: var(--glass);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 1.5rem;
+            backdrop-filter: blur(15px);
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.8rem;
+            font-size: 0.85rem;
+            border-bottom: 1px dashed rgba(255,255,255,0.1);
+            padding-bottom: 0.5rem;
+        }
+
+        body.theme-watercolor .stat-row {
+            border-bottom: 1px dashed rgba(0,0,0,0.1);
+        }
+
+        .stat-label {
+            color: var(--text-dim);
+        }
+        .stat-value {
+            font-weight: bold;
+            color: var(--primary);
+        }
+
+        #overlay {
+            position: absolute;
+            bottom: 2.5rem;
+            left: 2.5rem;
+            background: var(--glass);
+            padding: 2rem;
+            border-radius: 24px;
+            border: 1px solid var(--border);
+            max-width: 450px;
+            backdrop-filter: blur(25px);
+            display: none;
+            animation: slideUp 0.5s ease-out;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+        }
+
+        @keyframes slideUp {
+            from { transform: translateY(30px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        .status-tag {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            color: var(--primary);
+            margin-bottom: 0.8rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .status-dot {
+            width: 6px;
+            height: 6px;
+            background: var(--primary);
+            border-radius: 50%;
+            box-shadow: 0 0 8px var(--primary);
+        }
+
+        #ai-response {
+            font-size: 1.1rem;
+            line-height: 1.6;
+            color: var(--text-dim);
+            font-weight: 300;
+        }
+
+        .memory-recall-badge {
+            margin-top: 1.2rem;
+            background: rgba(112, 0, 255, 0.1);
+            border: 1px solid rgba(112, 0, 255, 0.4);
+            padding: 0.8rem 1rem;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            color: var(--secondary);
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <header id="dashboard-header">
+        <div class="logo-container">
+            <div class="logo">Virtual Crystal</div>
+            <div class="system-status">Dual-Brain: Active</div>
+        </div>
+        <div class="controls">
+            <div class="input-group">
+                <input type="text" id="thought-input" placeholder="Inject thought pattern...">
+            </div>
+            <button id="modulate-btn">Modulate</button>
+            <button id="audio-btn">
+                <span>🔊</span> Acoustic Sonification
+            </button>
+            <button id="mic-btn">Acoustic Uplink</button>
+            <select id="theme-select">
+                <option value="cyber">CYBERPUNK</option>
+                <option value="watercolor">POETIC WATERCOLOR</option>
+            </select>
+        </div>
+    </header>
+
+    <div id="visualizer-host">
+        <div id="metabolism-panel">
+            <div class="status-tag"><div class="status-dot"></div> CRYSTAL METABOLISM</div>
+            <div class="stat-row">
+                <span class="stat-label">Ledger Entropy</span>
+                <span class="stat-value" id="stat-entropy">Active</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Dual-Brain Latency</span>
+                <span class="stat-value" id="stat-latency">-- ms</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Constructive Peaks</span>
+                <span class="stat-value" id="stat-peaks">0</span>
+            </div>
+        </div>
+
+        <div id="overlay">
+            <span class="status-tag">
+                <div class="status-dot"></div>
+                Resonant Thought Decoded
+            </span>
+            <div id="ai-response"></div>
+            <div class="memory-recall-badge" id="memory-badge">
+                <b>RESONANCE RECALL:</b> <span id="memory-context"></span>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        
+        const host = document.getElementById('visualizer-host');
+        const overlay = document.getElementById('overlay');
+        const responseText = document.getElementById('ai-response');
+        const memoryBadge = document.getElementById('memory-badge');
+        const memoryContext = document.getElementById('memory-context');
+        const themeSelect = document.getElementById('theme-select');
+        const input = document.getElementById('thought-input');
+        const btn = document.getElementById('modulate-btn');
+        const audioBtn = document.getElementById('audio-btn');
+        const micBtn = document.getElementById('mic-btn');
+        const statusBadge = document.querySelector('.system-status');
+
+        // Stats Elements
+        const statLatency = document.getElementById('stat-latency');
+        const statPeaks = document.getElementById('stat-peaks');
+        let totalPeaks = 0;
+
+        // Theme Toggle
+        themeSelect.addEventListener('change', (e) => {
+            if (e.target.value === 'watercolor') {
+                document.body.classList.add('theme-watercolor');
+                pointMaterial.opacity = 0.65;
+            } else {
+                document.body.classList.remove('theme-watercolor');
+                pointMaterial.opacity = 0.9;
+            }
+            pointMaterial.needsUpdate = true;
+        });
+
+        // Audio System: Crystalline Sonification
+        let audioCtx = null;
+        let compressor = null;
+        let audioEnabled = false;
+        let microphoneStream = null;
+        let microphoneSource = null;
+        let microphoneAnalyser = null;
+        let microphoneData = null;
+        let microphoneEnabled = false;
+        let microphoneFrameId = 0;
+        let lastMicrophoneSend = 0;
+        const MICROPHONE_SEND_INTERVAL_MS = 250;
+        const SPEECH_ENERGY_THRESHOLD = 8;
+        
+        // 4 Octaves of C-Major Pentatonic (130.81Hz to 1046.50Hz)
+        const PENTATONIC_SCALE = [
+            130.81, 146.83, 164.81, 196.00, 220.00, // Octave 3
+            261.63, 293.66, 329.63, 392.00, 440.00, // Octave 4
+            523.25, 587.33, 659.25, 783.99, 880.00, // Octave 5
+            1046.50 // Octave 6 (High C)
+        ];
+
+        async function initAudio() {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            
+            // Dynamics Compressor to prevent clipping from massive chords
+            compressor = audioCtx.createDynamicsCompressor();
+            compressor.threshold.setValueAtTime(-24, audioCtx.currentTime);
+            compressor.knee.setValueAtTime(30, audioCtx.currentTime);
+            compressor.ratio.setValueAtTime(12, audioCtx.currentTime);
+            compressor.attack.setValueAtTime(0.003, audioCtx.currentTime);
+            compressor.release.setValueAtTime(0.25, audioCtx.currentTime);
+            
+            compressor.connect(audioCtx.destination);
+        }
+
+        audioBtn.onclick = async () => {
+            if (!audioCtx) await initAudio();
+            audioEnabled = !audioEnabled;
+            if (audioEnabled) {
+                await audioCtx.resume();
+                audioBtn.classList.add('active');
+            } else {
+                audioBtn.classList.remove('active');
+            }
+        };
+
+        function normalizeFrequencyToPhase(frequencyData) {
+            return Array.from(frequencyData, (value) => (value / 255) * Math.PI * 2);
+        }
+
+        function stopAcousticUplink() {
+            microphoneEnabled = false;
+            micBtn.classList.remove('active');
+
+            if (microphoneFrameId) {
+                cancelAnimationFrame(microphoneFrameId);
+                microphoneFrameId = 0;
+            }
+
+            if (microphoneSource) {
+                microphoneSource.disconnect();
+                microphoneSource = null;
+            }
+
+            if (microphoneStream) {
+                microphoneStream.getTracks().forEach((track) => track.stop());
+                microphoneStream = null;
+            }
+
+            microphoneAnalyser = null;
+            microphoneData = null;
+            setSystemStatus(socketReady ? 'Dual-Brain: Active' : 'Stream: Offline');
+        }
+
+        function sampleAcousticUplink() {
+            if (!microphoneEnabled || !microphoneAnalyser || !microphoneData) return;
+
+            microphoneAnalyser.getByteFrequencyData(microphoneData);
+
+            const averageEnergy = microphoneData.reduce((sum, value) => sum + value, 0) / microphoneData.length;
+            const now = performance.now();
+
+            if (averageEnergy > SPEECH_ENERGY_THRESHOLD && socketReady && now - lastMicrophoneSend >= MICROPHONE_SEND_INTERVAL_MS) {
+                const waveA = normalizeFrequencyToPhase(microphoneData);
+                ws.send(JSON.stringify({ waveA, source: 'acoustic-uplink' }));
+                lastMicrophoneSend = now;
+                statLatency.innerText = 'Uplink...';
+            }
+
+            microphoneFrameId = requestAnimationFrame(sampleAcousticUplink);
+        }
+
+        async function startAcousticUplink() {
+            if (!navigator.mediaDevices?.getUserMedia) {
+                responseText.innerText = 'Microphone capture is not available in this browser.';
+                overlay.style.display = 'block';
+                return;
+            }
+
+            if (!audioCtx) await initAudio();
+            await audioCtx.resume();
+
+            microphoneStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            microphoneSource = audioCtx.createMediaStreamSource(microphoneStream);
+            microphoneAnalyser = audioCtx.createAnalyser();
+            microphoneAnalyser.fftSize = 512;
+            microphoneData = new Uint8Array(microphoneAnalyser.frequencyBinCount);
+
+            microphoneSource.connect(microphoneAnalyser);
+            microphoneEnabled = true;
+            micBtn.classList.add('active');
+            setSystemStatus('Acoustic Uplink');
+            sampleAcousticUplink();
+        }
+
+        micBtn.onclick = async () => {
+            if (microphoneEnabled) {
+                stopAcousticUplink();
+                return;
+            }
+
+            try {
+                await startAcousticUplink();
+            } catch (error) {
+                stopAcousticUplink();
+                const message = error instanceof Error ? error.message : String(error);
+                responseText.innerText = `Acoustic uplink failed: ${message}`;
+                overlay.style.display = 'block';
+            }
+        };
+
+        // 3D Engine: Holographic Matrix
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / (window.innerHeight - 80), 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+
+        const crystalGroup = new THREE.Group();
+        const pointGeometry = new THREE.CircleGeometry(0.035, 8);
+        const pointMaterial = new THREE.MeshBasicMaterial({
+            color: 0xffffff,
+            transparent: true,
+            opacity: 0.9,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending,
+            vertexColors: true,
+            side: THREE.DoubleSide
+        });
+        const instanceDummy = new THREE.Object3D();
+        const instanceColor = new THREE.Color();
+        let pointCloud = null;
+        let pointCapacity = 0;
+
+        scene.add(crystalGroup);
+        camera.position.z = 5;
+
+        // WebSocket
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const ws = new WebSocket(`${wsProtocol}//${window.location.host}/stream`);
+        let socketReady = false;
+        btn.disabled = true;
+        micBtn.disabled = true;
+
+        function setSystemStatus(label) {
+            statusBadge.innerText = label;
+        }
+
+        function handleResize() {
+            const w = window.innerWidth;
+            const h = window.innerHeight - 80;
+            renderer.setSize(w, h);
+            camera.aspect = w / h;
+            camera.updateProjectionMatrix();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            crystalGroup.rotation.y += 0.002;
+            crystalGroup.rotation.x += 0.001;
+            renderer.render(scene, camera);
+        }
+
+        function submitThought() {
+            const val = input.value.trim();
+            if (val && socketReady) {
+                overlay.style.display = 'none';
+                ws.send(JSON.stringify({ thought: val }));
+                input.value = '';
+                statLatency.innerText = 'Syncing...';
+            }
+        }
+
+        btn.onclick = submitThought;
+        input.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') submitThought();
+        });
+
+        ws.onopen = () => {
+            socketReady = true;
+            btn.disabled = false;
+            micBtn.disabled = false;
+            setSystemStatus('Dual-Brain: Active');
+        };
+
+        ws.onclose = () => {
+            socketReady = false;
+            btn.disabled = true;
+            micBtn.disabled = true;
+            if (microphoneEnabled) stopAcousticUplink();
+            setSystemStatus('Stream: Offline');
+        };
+
+        ws.onerror = () => {
+            socketReady = false;
+            btn.disabled = true;
+            micBtn.disabled = true;
+            if (microphoneEnabled) stopAcousticUplink();
+            setSystemStatus('Stream: Error');
+        };
+
+        ws.onmessage = (msg) => {
+            const data = JSON.parse(msg.data);
+            if (data.status === 'thought_processed') {
+                responseText.innerText = data.response;
+                
+                if (data.memoryActive) {
+                    memoryBadge.style.display = 'block';
+                    memoryContext.innerText = data.context.substring(0, 100) + '...';
+                } else {
+                    memoryBadge.style.display = 'none';
+                }
+
+                // Update Metabolism
+                statLatency.innerText = data.latencyMs ? data.latencyMs + ' ms' : '-- ms';
+                totalPeaks += 1;
+                statPeaks.innerText = totalPeaks;
+
+                overlay.style.display = 'block';
+                draw3D(data.vector);
+                playHolographicChord(data.vector);
+            } else if (data.status === 'error') {
+                responseText.innerText = data.message;
+                memoryBadge.style.display = 'none';
+                overlay.style.display = 'block';
+                statLatency.innerText = '-- ms';
+            } else if (data.status === 'processed') {
+                statLatency.innerText = data.samples ? `${data.samples} acoustic bins` : '-- ms';
+                totalPeaks += 1;
+                statPeaks.innerText = totalPeaks;
+
+                if (data.vector) {
+                    draw3D(data.vector);
+                }
+            }
+        };
+
+        function playHolographicChord(vector) {
+            if (!audioEnabled || !audioCtx) return;
+
+            const now = audioCtx.currentTime;
+            const audibleVector = vector.slice(0, 96);
+
+            audibleVector.forEach((v, index) => {
+                const time = now + (index * 0.015);
+                
+                const freqIdx = Math.floor(Math.abs(v.re * 20)) % PENTATONIC_SCALE.length;
+                const freq = PENTATONIC_SCALE[freqIdx];
+
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                const panner = audioCtx.createStereoPanner();
+
+                osc.type = index % 3 === 0 ? 'triangle' : 'sine';
+                osc.frequency.setValueAtTime(freq, time);
+
+                gain.gain.setValueAtTime(0, time);
+                gain.gain.linearRampToValueAtTime(0.1, time + 0.05);
+                gain.gain.exponentialRampToValueAtTime(0.001, time + 1.5);
+
+                panner.pan.setValueAtTime(Math.max(-1, Math.min(1, v.im)), time);
+
+                osc.connect(gain);
+                gain.connect(panner);
+                panner.connect(compressor);
+
+                osc.start(time);
+                osc.stop(time + 1.6);
+            });
+        }
+
+        function ensureInstancedPointCloud(instanceCount) {
+            if (pointCloud && instanceCount <= pointCapacity) return;
+
+            if (pointCloud) {
+                crystalGroup.remove(pointCloud);
+            }
+
+            pointCapacity = Math.max(1024, Math.ceil(instanceCount / 1024) * 1024);
+            pointCloud = new THREE.InstancedMesh(pointGeometry, pointMaterial, pointCapacity);
+            pointCloud.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+            crystalGroup.add(pointCloud);
+        }
+
+        function draw3D(vector) {
+            ensureInstancedPointCloud(vector.length);
+            pointCloud.count = vector.length;
+
+            vector.forEach((v, i) => {
+                const radius = 2 + v.re;
+                const angle = i * 0.2;
+                const x = Math.cos(angle) * radius;
+                const y = Math.sin(angle) * radius;
+                const z = v.im * 3;
+                const scale = 0.45 + Math.abs(v.re) * 0.9;
+
+                instanceDummy.position.set(x, y, z);
+                instanceDummy.rotation.set(0, 0, 0);
+                instanceDummy.scale.setScalar(scale);
+                instanceDummy.updateMatrix();
+                pointCloud.setMatrixAt(i, instanceDummy.matrix);
+
+                instanceColor.setRGB(
+                    THREE.MathUtils.clamp(0.2 + (v.re + 1) / 4, 0, 1),
+                    THREE.MathUtils.clamp(0.8 + v.im / 2, 0, 1),
+                    0.9
+                );
+                pointCloud.setColorAt(i, instanceColor);
+            });
+
+            pointCloud.instanceMatrix.needsUpdate = true;
+            if (pointCloud.instanceColor) {
+                pointCloud.instanceColor.needsUpdate = true;
+            }
+        }
+
+        window.addEventListener('resize', handleResize);
+        host.appendChild(renderer.domElement);
+        handleResize();
+        animate();
+    </script>
+</body>
+</html>
