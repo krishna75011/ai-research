@@ -1,4 +1,4 @@
-import { Elysia } from 'elysia';
+import { Elysia, t } from 'elysia';
 import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import {
@@ -12,12 +12,10 @@ import {
     recordInteraction,
     updateMemoryFeedback,
     DEFAULT_WORKSPACE_ID,
-    type FileImportFile,
     type MemoryFeedbackAction
 } from './memoryBrain';
 import { processWaveThought } from './localBrain';
 import { textToWave } from './modulator';
-import { parseStreamMessage } from './protocol';
 import { simulateInterference, type WaveUnit } from './virtualCrystal';
 
 const THOUGHT_THROTTLE_MS = 1500;
@@ -34,10 +32,6 @@ const PORT = Number.isFinite(Number(process.env.PORT)) && Number(process.env.POR
 
 const clientThrottles = new Map<string, number>();
 const activeConnections = new Set<{ close(): void }>();
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 function getWorkspaceId(value: unknown): string | undefined {
     return typeof value === 'string' && value.trim() ? value.trim() : undefined;
@@ -90,30 +84,7 @@ async function recordAssistantMemory(
     });
 }
 
-function parseImportFiles(body: unknown): { workspaceId?: string; files: FileImportFile[] } | null {
-    if (!isRecord(body) || !Array.isArray(body.files)) return null;
 
-    const workspaceId = getWorkspaceId(body.workspaceId);
-    const files: FileImportFile[] = [];
-
-    for (const file of body.files) {
-        if (!isRecord(file) || typeof file.name !== 'string' || typeof file.content !== 'string') {
-            return null;
-        }
-
-        files.push({
-            name: file.name,
-            content: file.content,
-            relativePath: typeof file.relativePath === 'string' ? file.relativePath : null,
-            sourceUri: typeof file.sourceUri === 'string' ? file.sourceUri : null,
-            sourceTitle: typeof file.sourceTitle === 'string' ? file.sourceTitle : null,
-            sourceHash: typeof file.sourceHash === 'string' ? file.sourceHash : null,
-            lastModified: typeof file.lastModified === 'number' && Number.isFinite(file.lastModified) ? file.lastModified : null
-        });
-    }
-
-    return { workspaceId, files };
-}
 
 const app = new Elysia()
     .onError(({ code, error }) => {
@@ -138,11 +109,15 @@ const app = new Elysia()
         return file;
     })
     .get('/api/bootstrap', async ({ query }) => {
-        const workspaceId = getWorkspaceId(isRecord(query) ? query.workspaceId : undefined) ?? DEFAULT_WORKSPACE_ID;
+        const workspaceId = getWorkspaceId(query.workspaceId) ?? DEFAULT_WORKSPACE_ID;
         return {
             status: 'ok',
             snapshot: await getWorkspaceSnapshot({ workspaceId })
         };
+    }, {
+        query: t.Optional(t.Object({
+            workspaceId: t.Optional(t.String())
+        }))
     })
     .get('/api/workspaces/:id/export', async ({ params, set }) => {
         try {
@@ -156,10 +131,6 @@ const app = new Elysia()
         }
     })
     .post('/api/workspaces/import', async ({ body, set }) => {
-        if (!isRecord(body) || !body.exportData) {
-            set.status = 400;
-            return { status: 'error', message: 'Missing exportData.' };
-        }
         try {
             const workspace = await importWorkspaceData(body.exportData);
             return {
@@ -171,9 +142,13 @@ const app = new Elysia()
             set.status = 500;
             return { status: 'error', message: err instanceof Error ? err.message : String(err) };
         }
+    }, {
+        body: t.Object({
+            exportData: t.Any()
+        })
     })
     .post('/api/workspaces', async ({ body, set }) => {
-        if (!isRecord(body) || typeof body.name !== 'string' || !body.name.trim()) {
+        if (!body.name.trim()) {
             set.status = 400;
             return { status: 'error', message: 'Workspace name is required.' };
         }
@@ -184,27 +159,35 @@ const app = new Elysia()
             workspace,
             snapshot: await getWorkspaceSnapshot({ workspaceId: workspace.id })
         };
+    }, {
+        body: t.Object({
+            name: t.String()
+        })
     })
-    .post('/api/import', async ({ body, set }) => {
-        const parsed = parseImportFiles(body);
-        if (!parsed) {
-            set.status = 400;
-            return { status: 'error', message: 'Invalid import payload.' };
-        }
-
-        const result = await importFilesToMemory(parsed.files, { workspaceId: parsed.workspaceId });
+    .post('/api/import', async ({ body }) => {
+        const workspaceId = getWorkspaceId(body.workspaceId);
+        
+        const result = await importFilesToMemory(body.files, { workspaceId });
         return {
             status: 'ok',
             result,
             snapshot: await getWorkspaceSnapshot({ workspaceId: result.workspaceId })
         };
+    }, {
+        body: t.Object({
+            workspaceId: t.Optional(t.String()),
+            files: t.Array(t.Object({
+                name: t.String(),
+                content: t.String(),
+                relativePath: t.Optional(t.Union([t.String(), t.Null()])),
+                sourceUri: t.Optional(t.Union([t.String(), t.Null()])),
+                sourceTitle: t.Optional(t.Union([t.String(), t.Null()])),
+                sourceHash: t.Optional(t.Union([t.String(), t.Null()])),
+                lastModified: t.Optional(t.Union([t.Number(), t.Null()]))
+            }))
+        })
     })
     .post('/api/memory/feedback', async ({ body, set }) => {
-        if (!isRecord(body) || typeof body.atomId !== 'number' || !Number.isFinite(body.atomId) || typeof body.action !== 'string') {
-            set.status = 400;
-            return { status: 'error', message: 'Invalid feedback payload.' };
-        }
-
         const action = body.action as MemoryFeedbackAction;
         if (!['pin', 'exclude', 'mark_wrong', 'restore'].includes(action)) {
             set.status = 400;
@@ -222,8 +205,19 @@ const app = new Elysia()
             atom,
             snapshot: await getWorkspaceSnapshot({ workspaceId: atom.workspaceId })
         };
+    }, {
+        body: t.Object({
+            atomId: t.Number(),
+            action: t.String(),
+            workspaceId: t.Optional(t.String())
+        })
     })
     .ws('/stream', {
+        body: t.Optional(t.Object({
+            thought: t.Optional(t.String()),
+            workspaceId: t.Optional(t.String()),
+            kind: t.Optional(t.String())
+        })),
         open(ws) {
             activeConnections.add(ws);
             console.log('Client connected to Chronicle Memory stream');
@@ -232,19 +226,22 @@ const app = new Elysia()
             activeConnections.delete(ws);
             clientThrottles.delete(ws.id);
         },
-        async message(ws, message: unknown) {
+        async message(ws, message) {
             const start = performance.now();
 
             try {
-                const parsedMessage = parseStreamMessage(message);
-                if (!parsedMessage) {
+                if (!message || typeof message !== 'object') {
                     ws.send({ status: 'error', message: 'Invalid stream payload.' });
                     return;
                 }
 
-                const workspaceId = parsedMessage.workspaceId ?? DEFAULT_WORKSPACE_ID;
+                // If `parseStreamMessage` is still used for legacy reason or string fallback, we could bypass it since Elysia validates WS bodies too
+                // But let's use the validated body directly.
+                const thought = message.thought;
+                const kind = message.kind ?? 'thought';
+                const workspaceId = message.workspaceId ?? DEFAULT_WORKSPACE_ID;
 
-                if (parsedMessage.kind === 'thought') {
+                if (kind === 'thought' && thought) {
                     const now = Date.now();
                     const lastThought = clientThrottles.get(ws.id) || 0;
                     if (now - lastThought < THOUGHT_THROTTLE_MS) {
@@ -254,11 +251,11 @@ const app = new Elysia()
                     clientThrottles.set(ws.id, now);
 
                     const turnId = crypto.randomUUID();
-                    const thoughtVector = createTextVector(parsedMessage.thought);
-                    const memoryProbe = await probeMemory(parsedMessage.thought, thoughtVector, { workspaceId });
+                    const thoughtVector = createTextVector(thought);
+                    const memoryProbe = await probeMemory(thought, thoughtVector, { workspaceId });
 
                     const userAtom = await recordInteraction({
-                        contentText: parsedMessage.thought,
+                        contentText: thought,
                         waveSignature: thoughtVector,
                         sourceKind: 'user',
                         modality: 'text',
@@ -270,11 +267,11 @@ const app = new Elysia()
                         sourceType: 'conversation',
                         sourceTitle: 'Conversation',
                         rawPayload: {
-                            thought: parsedMessage.thought
+                            thought
                         }
                     });
 
-                    const aiResult = await processWaveThought(parsedMessage.thought, memoryProbe.assembledContext, true, (token) => {
+                    const aiResult = await processWaveThought(thought, memoryProbe.assembledContext, true, (token) => {
                         ws.send({
                             status: 'thought_stream',
                             workspaceId: memoryProbe.workspaceId,
