@@ -15,6 +15,16 @@ const STOP_WORDS = new Set([
     'there', 'they', 'this', 'those', 'too', 'use', 'using', 'was', 'were', 'what', 'when', 'where', 'which',
     'with', 'would', 'your'
 ]);
+const ORCHESTRATION_ARTIFACT_PATTERNS = [
+    'Alpha Phase:',
+    'Beta Phase:',
+    '[Alpha Phase]',
+    '[Beta Phase]',
+    '[Qwen Output]',
+    '[Gemma Output]',
+    'Qwen Output:',
+    'Gemma Output:'
+] as const;
 
 export type MemoryModality = 'text' | 'acoustic_summary' | 'system_derived' | 'legacy_import';
 export type MemorySourceKind = 'user' | 'assistant' | 'system' | 'legacy_ledger';
@@ -221,6 +231,10 @@ function parseWaveSignature(value: string): WaveUnit[] {
 
 function normalizeWhitespace(text: string): string {
     return text.replace(/\s+/g, ' ').trim();
+}
+
+export function containsOrchestrationArtifact(text: string): boolean {
+    return ORCHESTRATION_ARTIFACT_PATTERNS.some((pattern) => text.includes(pattern));
 }
 
 function normalizeText(text: string): string {
@@ -438,6 +452,10 @@ function mapEvidenceBranch(row: EvidenceBranchRow): EvidenceBranch {
     };
 }
 
+function shouldSuppressAtomFromRecall(atom: MemoryAtom): boolean {
+    return atom.sourceKind === 'assistant' && containsOrchestrationArtifact(atom.contentText);
+}
+
 function getMemoryBrainPath(options: MemoryBrainOptions = {}): string {
     return path.resolve(options.brainPath ?? process.env.MEMORY_BRAIN_PATH ?? DEFAULT_MEMORY_BRAIN_PATH);
 }
@@ -534,6 +552,28 @@ function setMeta(db: Database, key: string, value: string) {
         VALUES (?, ?)
         ON CONFLICT(key) DO UPDATE SET value = excluded.value
     `).run(key, value);
+}
+
+function runMemoryMaintenance(db: Database) {
+    const maintenanceKey = 'maintenance:purge-orchestration-artifacts:v1';
+    if (getMeta(db, maintenanceKey)) return;
+
+    db.query(`
+        DELETE FROM memory_atoms
+        WHERE source_kind = 'assistant'
+          AND (
+                content_text LIKE '%Alpha Phase:%'
+             OR content_text LIKE '%Beta Phase:%'
+             OR content_text LIKE '%[Alpha Phase]%'
+             OR content_text LIKE '%[Beta Phase]%'
+             OR content_text LIKE '%[Qwen Output]%'
+             OR content_text LIKE '%[Gemma Output]%'
+             OR content_text LIKE '%Qwen Output:%'
+             OR content_text LIKE '%Gemma Output:%'
+          )
+    `).run();
+
+    setMeta(db, maintenanceKey, new Date().toISOString());
 }
 
 function getDatabase(options: MemoryBrainOptions = {}): Database {
@@ -806,6 +846,7 @@ function ensureLegacyImported(db: Database, options: MemoryBrainOptions = {}) {
 
 function prepareDatabase(options: MemoryBrainOptions = {}): Database {
     const db = getDatabase(options);
+    runMemoryMaintenance(db);
     ensureLegacyImported(db, options);
     return db;
 }
@@ -827,8 +868,20 @@ function getTimelineNeighbors(db: Database, atomId: number): MemoryAtom[] {
         LIMIT 1
     `).get(atomId) as AtomRow | null;
 
-    if (previous) neighbors.push(mapAtom(previous));
-    if (next) neighbors.push(mapAtom(next));
+    if (previous) {
+        const atom = mapAtom(previous);
+        if (!shouldSuppressAtomFromRecall(atom)) {
+            neighbors.push(atom);
+        }
+    }
+
+    if (next) {
+        const atom = mapAtom(next);
+        if (!shouldSuppressAtomFromRecall(atom)) {
+            neighbors.push(atom);
+        }
+    }
+
     return neighbors;
 }
 
@@ -838,6 +891,7 @@ function rankAtoms(atoms: MemoryAtom[], queryText: string, queryWaveSignature: W
     const timeAnchor = inferTimeAnchor(queryText);
 
     return atoms
+        .filter((atom) => !shouldSuppressAtomFromRecall(atom))
         .map((atom) => {
             const lexical = overlapScore(queryTokens, tokenize(atom.contentText));
             const entity = overlapScore(queryEntities, atom.entityKeys);

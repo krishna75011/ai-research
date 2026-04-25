@@ -2,7 +2,7 @@ import { staticPlugin } from '@elysiajs/static';
 import { Elysia } from 'elysia';
 import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
 import { summarizeAcousticWave } from './acousticWave';
-import { probeMemory, recordInteraction } from './memoryBrain';
+import { containsOrchestrationArtifact, probeMemory, recordInteraction } from './memoryBrain';
 import { processWaveThought } from './localBrain';
 import { textToWave } from './modulator';
 import { parseStreamMessage } from './protocol';
@@ -27,6 +27,10 @@ function createTextVector(text: string): WaveUnit[] {
 }
 
 async function recordAssistantMemory(response: string, sessionId: string, turnId: string, parentAtomId: number, inputMode: 'text' | 'acoustic-uplink') {
+    if (containsOrchestrationArtifact(response)) {
+        return;
+    }
+
     await recordInteraction({
         contentText: response,
         waveSignature: createTextVector(response),

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
+    containsOrchestrationArtifact,
     getEvidenceBranches,
     getMemoryAtoms,
     getStandingWaves,
@@ -117,5 +118,34 @@ describe('memory brain', () => {
 
         expect(atomsAfterFirstProbe).toHaveLength(1);
         expect(atomsAfterSecondProbe).toHaveLength(1);
+    });
+
+    test('suppresses orchestration artifacts from recall context', async () => {
+        const brainPath = testPath('brain-artifact', 'sqlite');
+        const legacyLedgerPath = testPath('brain-artifact-legacy', 'crystal');
+        const greeting = 'hi';
+        const pollutedAssistant = 'Alpha Phase: "Hello! How can I assist you today?" Beta Phase: Acknowledged.';
+
+        expect(containsOrchestrationArtifact(pollutedAssistant)).toBe(true);
+
+        await recordInteraction({
+            contentText: greeting,
+            waveSignature: vectorFor(greeting),
+            sourceKind: 'user',
+            modality: 'text'
+        }, { brainPath, legacyLedgerPath });
+
+        await recordInteraction({
+            contentText: pollutedAssistant,
+            waveSignature: vectorFor('Hello! How can I assist you today?'),
+            sourceKind: 'assistant',
+            modality: 'system_derived'
+        }, { brainPath, legacyLedgerPath });
+
+        const probe = await probeMemory(greeting, vectorFor(greeting), { brainPath, legacyLedgerPath });
+
+        expect(probe.assembledContext).toContain('hi');
+        expect(probe.assembledContext).not.toContain('Alpha Phase');
+        expect(probe.assembledContext).not.toContain('Beta Phase');
     });
 });
