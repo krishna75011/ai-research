@@ -1157,7 +1157,7 @@
                 }
 
                 if (data.status === 'thought_processed') {
-                    state.lastLatency = data.latencyMs ? `${data.latencyMs} ms` : '-- ms';
+                    state.lastLatency = data.latency_ms ? `${data.latency_ms.toFixed(2)} ms` : '-- ms';
                     metricLatency.innerText = state.lastLatency;
                     renderEvidence(data);
                     renderDiagnostics(data.modelOutputs);

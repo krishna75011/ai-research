@@ -210,7 +210,8 @@ export async function processWaveThought(
                 'Combine the evidence and candidate answers into a single, clean assistant response.',
                 'Answer the user directly and conversationally.',
                 'DO NOT repeat the [User Input] or [Candidate Answer] headers.',
-                'DO NOT include labels like "User:" or "Assistant:" in your output.',
+                'DO NOT include labels like "User:", "Assistant:", or timestamps in your output.',
+                'DO NOT echo the user query or any part of the historical transcript.',
                 'Do not say "I don\'t know" if the context provides the answer.',
                 'Avoid technical IDs or "Atom #" prefixes.',
                 'Return ONLY the final conversation-ready text, starting with the answer itself.'
