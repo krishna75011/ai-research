@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Optical Dashboard | Virtual Crystal</title>
-    <!-- three.module.js is vendored at r160 (2023). Check https://github.com/mrdoob/three.js/releases for updates. -->
+    <title>Chronicle Memory</title>
     <script type="importmap">
       {
         "imports": {
@@ -12,514 +11,990 @@
         }
       }
     </script>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            /* Default Cyberpunk Theme */
-            --primary: #00f2ff;
-            --secondary: #7000ff;
-            --accent: #ff00c8;
-            --bg: #020205;
-            --glass: rgba(15, 15, 25, 0.6);
-            --border: rgba(0, 242, 255, 0.2);
-            --text-main: #fff;
-            --text-dim: #eee;
-            --font-family: 'Outfit', sans-serif;
+            --bg: #090b12;
+            --bg-elevated: #0f1320;
+            --bg-muted: #14192a;
+            --panel-border: rgba(94, 124, 255, 0.18);
+            --panel-border-strong: rgba(94, 124, 255, 0.36);
+            --accent: #5e7cff;
+            --accent-soft: rgba(94, 124, 255, 0.14);
+            --success: #38d49f;
+            --warning: #f2a75a;
+            --danger: #ff7d7d;
+            --text-main: #f4f7fb;
+            --text-muted: #a8b1c7;
+            --text-dim: #76809b;
+            --shadow: 0 18px 42px rgba(3, 7, 18, 0.42);
+            --radius: 14px;
+            --radius-sm: 10px;
         }
 
-        body.theme-watercolor {
-            --primary: #4a90e2;
-            --secondary: #50e3c2;
-            --accent: #f5a623;
-            --bg: #f8f9fa;
-            --glass: rgba(255, 255, 255, 0.7);
-            --border: rgba(74, 144, 226, 0.3);
-            --text-main: #2c3e50;
-            --text-dim: #34495e;
-            --font-family: 'Georgia', serif;
-            background-image: url('data:image/svg+xml;utf8,<svg width="100" height="100" xmlns="http://www.w3.org/2000/svg"><filter id="noise"><feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="4" stitchTiles="stitch"/></filter><rect width="100" height="100" filter="url(%23noise)" opacity="0.05"/></svg>');
+        * {
+            box-sizing: border-box;
         }
 
         body {
-            background-color: var(--bg);
-            color: var(--text-main);
-            font-family: var(--font-family);
             margin: 0;
+            min-height: 100vh;
+            background:
+                radial-gradient(circle at top right, rgba(94, 124, 255, 0.12), transparent 32%),
+                linear-gradient(180deg, #0a0d15 0%, #090b12 100%);
+            color: var(--text-main);
+            font-family: Inter, "Segoe UI", sans-serif;
+        }
+
+        button,
+        input,
+        textarea {
+            font: inherit;
+        }
+
+        .app-shell {
+            display: grid;
+            grid-template-rows: auto 1fr;
+            min-height: 100vh;
+        }
+
+        .app-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1.5rem;
+            padding: 1rem 1.4rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            background: rgba(7, 10, 17, 0.94);
+            backdrop-filter: blur(16px);
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        .brand-block {
             display: flex;
             flex-direction: column;
-            height: 100vh;
-            overflow: hidden;
-            transition: all 0.5s ease;
+            gap: 0.2rem;
         }
 
-        /* ... existing styles updated with CSS vars ... */
-        #dashboard-header {
-            background: var(--glass);
-            backdrop-filter: blur(20px);
-            border-bottom: 1px solid var(--border);
-            padding: 1rem 2.5rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            z-index: 100;
-            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
-        }
-
-        .logo-container {
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-        }
-
-        .logo {
-            font-size: 1.4rem;
+        .brand-title {
+            font-size: 1.25rem;
             font-weight: 700;
-            background: linear-gradient(to right, var(--primary), var(--secondary));
-            -webkit-background-clip: text;
-            background-clip: text;
-            -webkit-text-fill-color: transparent;
-            letter-spacing: 4px;
-            text-transform: uppercase;
+            letter-spacing: 0.04em;
         }
 
-        .system-status {
-            font-size: 0.65rem;
-            color: var(--primary);
-            border: 1px solid var(--primary);
-            padding: 2px 8px;
-            border-radius: 4px;
-            letter-spacing: 1px;
-            animation: pulse 2s infinite;
+        .brand-subtitle {
+            font-size: 0.82rem;
+            color: var(--text-muted);
         }
 
-        @keyframes pulse {
-            0% { opacity: 1; }
-            50% { opacity: 0.5; }
-            100% { opacity: 1; }
-        }
-
-        .controls {
-            display: flex;
-            gap: 1.5rem;
-            align-items: center;
-        }
-
-        .input-group {
-            position: relative;
+        .header-controls {
             display: flex;
             align-items: center;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+            justify-content: flex-end;
         }
 
-        input {
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid var(--border);
-            color: var(--text-main);
-            padding: 0.9rem 1.5rem;
-            width: 400px;
-            border-radius: 100px;
-            outline: none;
-            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            font-size: 0.9rem;
-        }
-
-        body.theme-watercolor input {
-            background: rgba(0, 0, 0, 0.02);
-            border: 1px solid rgba(0,0,0,0.1);
-        }
-
-        input:focus {
-            width: 450px;
-            background: rgba(255, 255, 255, 0.07);
-            border-color: var(--primary);
-            box-shadow: 0 0 30px rgba(0, 242, 255, 0.15);
-        }
-
-        #modulate-btn {
-            background: linear-gradient(45deg, var(--primary), var(--secondary));
-            color: #000;
-            border: none;
-            padding: 0.9rem 2rem;
-            cursor: pointer;
-            font-weight: 700;
-            border-radius: 100px;
-            transition: all 0.3s ease;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            font-size: 0.8rem;
-        }
-
-        body.theme-watercolor #modulate-btn {
-            color: #fff;
-        }
-
-        #modulate-btn:hover {
-            transform: scale(1.05);
-            box-shadow: 0 0 25px rgba(0, 242, 255, 0.5);
-        }
-
-        #modulate-btn:disabled {
-            opacity: 0.45;
-            cursor: not-allowed;
-            transform: none;
-            box-shadow: none;
-        }
-
-        #audio-btn,
-        #mic-btn {
-            background: rgba(255, 255, 255, 0.05);
-            color: var(--text-main);
-            border: 1px solid var(--border);
-            padding: 0.6rem 1.2rem;
-            border-radius: 12px;
-            cursor: pointer;
-            font-size: 0.75rem;
-            font-weight: 700;
-            transition: all 0.3s ease;
-            display: flex;
+        .status-chip,
+        .workspace-chip {
+            display: inline-flex;
             align-items: center;
-            gap: 8px;
-        }
-
-        #audio-btn.active,
-        #mic-btn.active {
-            background: var(--primary);
-            color: #000;
-            border-color: var(--primary);
-        }
-
-        #mic-btn:disabled {
-            opacity: 0.45;
-            cursor: not-allowed;
-        }
-
-        select {
-            background: rgba(0, 0, 0, 0.5);
-            color: var(--text-main);
-            border: 1px solid var(--border);
-            padding: 0.5rem 1rem;
-            border-radius: 10px;
-            font-size: 0.75rem;
-            font-weight: 700;
-            outline: none;
-            cursor: pointer;
-            backdrop-filter: blur(10px);
-            -webkit-appearance: none;
-            appearance: none;
-        }
-
-        body.theme-watercolor select {
-            background: rgba(255, 255, 255, 0.6);
-            color: var(--text-main);
-        }
-
-        select option {
-            background: #020205;
-            color: #fff;
-            padding: 10px;
-        }
-
-        body.theme-watercolor select option {
-            background: #f8f9fa;
-            color: #2c3e50;
-        }
-
-        #visualizer-host {
-            flex-grow: 1;
-            position: relative;
-            display: flex;
-        }
-
-        /* Metabolism Panel */
-        #metabolism-panel {
-            position: absolute;
-            top: 2.5rem;
-            right: 2.5rem;
-            width: 280px;
-            background: var(--glass);
-            border: 1px solid var(--border);
-            border-radius: 16px;
-            padding: 1.5rem;
-            backdrop-filter: blur(15px);
-        }
-
-        .stat-row {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 0.8rem;
-            font-size: 0.85rem;
-            border-bottom: 1px dashed rgba(255,255,255,0.1);
-            padding-bottom: 0.5rem;
-        }
-
-        body.theme-watercolor .stat-row {
-            border-bottom: 1px dashed rgba(0,0,0,0.1);
-        }
-
-        .stat-label {
-            color: var(--text-dim);
-        }
-        .stat-value {
-            font-weight: bold;
-            color: var(--primary);
-        }
-
-        #overlay {
-            position: absolute;
-            bottom: 2.5rem;
-            left: 2.5rem;
-            background: var(--glass);
-            padding: 2rem;
-            border-radius: 24px;
-            border: 1px solid var(--border);
-            max-width: 450px;
-            backdrop-filter: blur(25px);
-            display: none;
-            animation: slideUp 0.5s ease-out;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
-        }
-
-        @keyframes slideUp {
-            from { transform: translateY(30px); opacity: 0; }
-            to { transform: translateY(0); opacity: 1; }
-        }
-
-        .status-tag {
-            font-size: 0.7rem;
-            text-transform: uppercase;
-            color: var(--primary);
-            margin-bottom: 0.8rem;
-            display: flex;
-            align-items: center;
-            gap: 8px;
+            gap: 0.45rem;
+            padding: 0.45rem 0.7rem;
+            border-radius: 999px;
+            border: 1px solid var(--panel-border);
+            background: rgba(255, 255, 255, 0.02);
+            font-size: 0.82rem;
+            color: var(--text-muted);
         }
 
         .status-dot {
-            width: 6px;
-            height: 6px;
-            background: var(--primary);
-            border-radius: 50%;
-            box-shadow: 0 0 8px var(--primary);
+            width: 8px;
+            height: 8px;
+            border-radius: 999px;
+            background: var(--success);
+            box-shadow: 0 0 14px rgba(56, 212, 159, 0.4);
         }
 
-        #ai-response {
-            font-size: 1.1rem;
-            line-height: 1.6;
-            color: var(--text-dim);
-            font-weight: 300;
+        .header-button,
+        .send-button,
+        .ghost-button {
+            border: 1px solid var(--panel-border);
+            background: var(--bg-elevated);
+            color: var(--text-main);
+            border-radius: 999px;
+            padding: 0.62rem 0.95rem;
+            cursor: pointer;
+            transition: border-color 0.2s ease, transform 0.2s ease, background 0.2s ease;
         }
 
-        .brain-output-grid {
+        .header-button:hover,
+        .send-button:hover,
+        .ghost-button:hover {
+            border-color: var(--panel-border-strong);
+            transform: translateY(-1px);
+        }
+
+        .header-button.active,
+        .ghost-button.active {
+            background: var(--accent-soft);
+            color: #dce4ff;
+        }
+
+        .send-button {
+            background: linear-gradient(135deg, #5e7cff, #7d5fff);
+            border-color: transparent;
+            color: #fdfdff;
+            font-weight: 600;
+        }
+
+        .workspace-selector {
+            min-width: 210px;
+            border: 1px solid var(--panel-border);
+            background: var(--bg-elevated);
+            color: var(--text-main);
+            border-radius: 999px;
+            padding: 0.62rem 0.85rem;
+        }
+
+        .main-grid {
             display: grid;
-            grid-template-columns: 1fr;
-            gap: 0.8rem;
-            margin-top: 1.2rem;
+            grid-template-columns: 280px minmax(0, 1fr) 360px;
+            gap: 1rem;
+            padding: 1rem;
+            min-height: 0;
         }
 
-        .brain-output-card {
-            background: rgba(255, 255, 255, 0.04);
-            border: 1px solid var(--border);
-            border-radius: 12px;
+        .column {
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .panel {
+            background: linear-gradient(180deg, rgba(15, 19, 32, 0.92), rgba(10, 13, 21, 0.96));
+            border: 1px solid var(--panel-border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1rem;
+            padding: 0.95rem 1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .panel-title {
+            font-size: 0.84rem;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            letter-spacing: 0.08em;
+            margin: 0;
+        }
+
+        .panel-body {
             padding: 0.9rem 1rem;
         }
 
-        body.theme-watercolor .brain-output-card {
-            background: rgba(0, 0, 0, 0.03);
+        .workspace-list,
+        .timeline-list,
+        .source-list,
+        .evidence-list,
+        .message-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.6rem;
         }
 
-        .brain-output-label {
-            display: block;
-            margin-bottom: 0.35rem;
-            font-size: 0.7rem;
-            font-weight: 700;
-            color: var(--primary);
-            text-transform: uppercase;
-            letter-spacing: 1px;
+        .workspace-row,
+        .timeline-row,
+        .source-row,
+        .citation-row {
+            padding: 0.8rem 0.9rem;
+            border-radius: var(--radius-sm);
+            background: rgba(255, 255, 255, 0.025);
+            border: 1px solid rgba(255, 255, 255, 0.04);
         }
 
-        .brain-output-value {
+        .workspace-row.active {
+            border-color: var(--panel-border-strong);
+            background: rgba(94, 124, 255, 0.1);
+        }
+
+        .row-title {
+            font-size: 0.92rem;
+            font-weight: 600;
+            margin: 0 0 0.2rem;
+        }
+
+        .row-meta,
+        .row-subtext {
+            font-size: 0.8rem;
+            color: var(--text-muted);
             margin: 0;
-            font-size: 0.9rem;
-            line-height: 1.5;
+        }
+
+        .workspace-form {
+            display: flex;
+            gap: 0.55rem;
+            margin-top: 0.85rem;
+        }
+
+        .workspace-form input,
+        .composer textarea {
+            width: 100%;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.03);
+            color: var(--text-main);
+            border-radius: 12px;
+            padding: 0.8rem 0.9rem;
+            outline: none;
+        }
+
+        .workspace-form input:focus,
+        .composer textarea:focus {
+            border-color: var(--panel-border-strong);
+            box-shadow: 0 0 0 3px rgba(94, 124, 255, 0.14);
+        }
+
+        .conversation-panel {
+            display: grid;
+            grid-template-rows: auto 1fr auto;
+            min-height: 0;
+        }
+
+        .overview-band {
+            padding: 1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 0.75rem;
+        }
+
+        .metric {
+            padding: 0.85rem 0.9rem;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .metric-label {
+            display: block;
+            font-size: 0.76rem;
             color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .metric-value {
+            margin-top: 0.35rem;
+            display: block;
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+
+        .message-scroller,
+        .timeline-scroll,
+        .sources-scroll,
+        .evidence-scroll {
+            overflow: auto;
+            min-height: 0;
+        }
+
+        .message-scroller {
+            padding: 1rem;
+        }
+
+        .message {
+            padding: 0.95rem 1rem;
+            border-radius: 14px;
+            max-width: 85%;
+            white-space: pre-wrap;
+            line-height: 1.55;
+        }
+
+        .message.user {
+            margin-left: auto;
+            background: rgba(94, 124, 255, 0.14);
+            border: 1px solid rgba(94, 124, 255, 0.22);
+        }
+
+        .message.assistant {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .message.acoustic {
+            background: rgba(56, 212, 159, 0.08);
+            border: 1px solid rgba(56, 212, 159, 0.15);
+        }
+
+        .message-role {
+            display: block;
+            font-size: 0.73rem;
+            text-transform: uppercase;
+            color: var(--text-dim);
+            margin-bottom: 0.35rem;
+            letter-spacing: 0.08em;
+        }
+
+        .empty-state {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+            line-height: 1.6;
+            padding: 1rem 0.1rem;
+        }
+
+        .composer {
+            padding: 1rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            display: grid;
+            gap: 0.8rem;
+        }
+
+        .composer textarea {
+            resize: vertical;
+            min-height: 110px;
+            max-height: 220px;
+        }
+
+        .composer-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .composer-button-row {
+            display: flex;
+            gap: 0.65rem;
+            flex-wrap: wrap;
+        }
+
+        .composer-status {
+            font-size: 0.82rem;
+            color: var(--text-muted);
+        }
+
+        .citation-group + .citation-group {
+            margin-top: 1rem;
+        }
+
+        .citation-group h3,
+        .warning-block h3 {
+            margin: 0 0 0.65rem;
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-dim);
+        }
+
+        .citation-actions {
+            display: flex;
+            gap: 0.45rem;
+            flex-wrap: wrap;
+            margin-top: 0.65rem;
+        }
+
+        .citation-actions button {
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.03);
+            color: var(--text-muted);
+            border-radius: 999px;
+            padding: 0.38rem 0.7rem;
+            cursor: pointer;
+        }
+
+        .warning-block {
+            margin-top: 1rem;
+            padding: 0.85rem 0.9rem;
+            border-radius: 12px;
+            background: rgba(242, 167, 90, 0.08);
+            border: 1px solid rgba(242, 167, 90, 0.16);
+        }
+
+        .warning-row {
+            color: #f8d3ae;
+            font-size: 0.86rem;
+            line-height: 1.5;
+        }
+
+        .diagnostics-panel[hidden] {
+            display: none;
+        }
+
+        .diagnostic-output {
+            padding: 0.8rem 0.9rem;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            font-size: 0.85rem;
+            line-height: 1.55;
             white-space: pre-wrap;
         }
 
-        .memory-recall-badge {
-            margin-top: 1.2rem;
-            background: rgba(112, 0, 255, 0.1);
-            border: 1px solid rgba(112, 0, 255, 0.4);
-            padding: 0.8rem 1rem;
-            border-radius: 12px;
-            font-size: 0.75rem;
-            color: var(--secondary);
+        .visualizer-panel .panel-body {
+            padding: 0;
+        }
+
+        #visualizer-host {
+            width: 100%;
+            min-height: 260px;
+            background: radial-gradient(circle at center, rgba(94, 124, 255, 0.08), transparent 58%);
+        }
+
+        .hidden-input {
             display: none;
+        }
+
+        @media (max-width: 1300px) {
+            .main-grid {
+                grid-template-columns: 240px minmax(0, 1fr) 320px;
+            }
+        }
+
+        @media (max-width: 1120px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .overview-band {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 720px) {
+            .app-header {
+                align-items: flex-start;
+            }
+
+            .overview-band {
+                grid-template-columns: 1fr;
+            }
+
+            .message {
+                max-width: 100%;
+            }
         }
     </style>
 </head>
 <body>
-    <header id="dashboard-header">
-        <div class="logo-container">
-            <div class="logo">Virtual Crystal</div>
-            <div class="system-status">Dual-Brain: Active</div>
-        </div>
-        <div class="controls">
-            <div class="input-group">
-                <input type="text" id="thought-input" placeholder="Inject thought pattern...">
+    <div class="app-shell">
+        <header class="app-header">
+            <div class="brand-block">
+                <div class="brand-title">Chronicle Memory</div>
+                <div class="brand-subtitle">Local-first personal memory workspace with evidence-backed recall.</div>
             </div>
-            <button id="modulate-btn">Modulate</button>
-            <button id="audio-btn">
-                <span>🔊</span> Acoustic Sonification
-            </button>
-            <button id="mic-btn">Acoustic Uplink</button>
-            <select id="theme-select">
-                <option value="cyber">CYBERPUNK</option>
-                <option value="watercolor">POETIC WATERCOLOR</option>
-            </select>
-        </div>
-    </header>
+            <div class="header-controls">
+                <span class="status-chip"><span class="status-dot"></span><span id="app-status">Connecting</span></span>
+                <select id="workspace-selector" class="workspace-selector"></select>
+                <button id="import-files-btn" class="header-button">Import Files</button>
+                <button id="import-folder-btn" class="header-button">Import Folder</button>
+                <button id="sound-btn" class="header-button">Sound</button>
+                <button id="mic-btn" class="header-button">Acoustic Lab</button>
+                <button id="developer-toggle" class="header-button">Developer Mode</button>
+            </div>
+        </header>
 
-    <div id="visualizer-host">
-        <div id="metabolism-panel">
-            <div class="status-tag"><div class="status-dot"></div> CRYSTAL METABOLISM</div>
-            <div class="stat-row">
-                <span class="stat-label">Ledger Entropy</span>
-                <span class="stat-value" id="stat-entropy">Active</span>
-            </div>
-            <div class="stat-row">
-                <span class="stat-label">Dual-Brain Latency</span>
-                <span class="stat-value" id="stat-latency">-- ms</span>
-            </div>
-            <div class="stat-row">
-                <span class="stat-label">Constructive Peaks</span>
-                <span class="stat-value" id="stat-peaks">0</span>
-            </div>
-        </div>
+        <main class="main-grid">
+            <aside class="column">
+                <section class="panel">
+                    <div class="panel-header">
+                        <h2 class="panel-title">Workspaces</h2>
+                        <span class="workspace-chip" id="workspace-chip">Personal</span>
+                    </div>
+                    <div class="panel-body">
+                        <div class="workspace-list" id="workspace-list"></div>
+                        <form class="workspace-form" id="workspace-form">
+                            <input id="workspace-name" type="text" placeholder="New workspace name">
+                            <button class="ghost-button" type="submit">Create</button>
+                        </form>
+                    </div>
+                </section>
 
-        <div id="overlay">
-            <span class="status-tag">
-                <div class="status-dot"></div>
-                Resonant Thought Decoded
-            </span>
-            <div id="ai-response"></div>
-            <div class="brain-output-grid" id="brain-output-grid" style="display: none;">
-                <div class="brain-output-card">
-                    <span class="brain-output-label">Qwen Output</span>
-                    <p class="brain-output-value" id="qwen-output"></p>
-                </div>
-                <div class="brain-output-card">
-                    <span class="brain-output-label">Gemma Output</span>
-                    <p class="brain-output-value" id="gemma-output"></p>
-                </div>
-            </div>
-            <div class="memory-recall-badge" id="memory-badge">
-                <b>RESONANCE RECALL:</b> <span id="memory-context"></span>
-            </div>
-        </div>
+                <section class="panel timeline-scroll">
+                    <div class="panel-header">
+                        <h2 class="panel-title">Timeline</h2>
+                    </div>
+                    <div class="panel-body">
+                        <div class="timeline-list" id="timeline-list"></div>
+                    </div>
+                </section>
+            </aside>
+
+            <section class="column">
+                <section class="panel conversation-panel">
+                    <div class="overview-band">
+                        <div class="metric">
+                            <span class="metric-label">Workspace</span>
+                            <span class="metric-value" id="metric-workspace">Personal</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">Memories</span>
+                            <span class="metric-value" id="metric-memories">0</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">Pinned</span>
+                            <span class="metric-value" id="metric-pinned">0</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">Latency</span>
+                            <span class="metric-value" id="metric-latency">-- ms</span>
+                        </div>
+                    </div>
+
+                    <div class="message-scroller" id="message-scroller">
+                        <div class="message-list" id="message-list"></div>
+                        <div class="empty-state" id="empty-state">
+                            Chronicle Memory starts by storing your conversations in the active workspace. Import notes or source files to make recall useful immediately, then ask what was decided, what changed, or what you discussed earlier.
+                        </div>
+                    </div>
+
+                    <div class="composer">
+                        <textarea id="thought-input" placeholder="Ask about previous discussions, current decisions, or imported files."></textarea>
+                        <div class="composer-actions">
+                            <div class="composer-button-row">
+                                <button id="send-btn" class="send-button" type="button">Ask Memory</button>
+                                <button id="restore-last-btn" class="ghost-button" type="button">Restore Last Hidden Memory</button>
+                            </div>
+                            <div class="composer-status" id="composer-status">Waiting for the memory engine.</div>
+                        </div>
+                    </div>
+                </section>
+            </section>
+
+            <aside class="column">
+                <section class="panel evidence-scroll">
+                    <div class="panel-header">
+                        <h2 class="panel-title">Evidence</h2>
+                    </div>
+                    <div class="panel-body">
+                        <div id="evidence-groups"></div>
+                        <div id="branch-warnings"></div>
+                    </div>
+                </section>
+
+                <section class="panel sources-scroll">
+                    <div class="panel-header">
+                        <h2 class="panel-title">Imported Sources</h2>
+                    </div>
+                    <div class="panel-body">
+                        <div class="source-list" id="source-list"></div>
+                    </div>
+                </section>
+
+                <section class="panel diagnostics-panel" id="diagnostics-panel" hidden>
+                    <div class="panel-header">
+                        <h2 class="panel-title">Diagnostics</h2>
+                    </div>
+                    <div class="panel-body">
+                        <div class="diagnostic-output" id="qwen-output">Qwen output will appear here when developer mode is enabled.</div>
+                        <div style="height: 0.75rem;"></div>
+                        <div class="diagnostic-output" id="gemma-output">Gemma output will appear here when developer mode is enabled.</div>
+                    </div>
+                </section>
+
+                <section class="panel visualizer-panel">
+                    <div class="panel-header">
+                        <h2 class="panel-title">Signal Field</h2>
+                    </div>
+                    <div class="panel-body">
+                        <div id="visualizer-host"></div>
+                    </div>
+                </section>
+            </aside>
+        </main>
     </div>
+
+    <input id="file-input" class="hidden-input" type="file" multiple accept=".md,.txt,.json,.ts,.tsx,.js,.jsx,.py">
+    <input id="folder-input" class="hidden-input" type="file" multiple webkitdirectory>
 
     <script type="module">
         import * as THREE from 'three';
-        
-        const host = document.getElementById('visualizer-host');
-        const overlay = document.getElementById('overlay');
-        const responseText = document.getElementById('ai-response');
-        const brainOutputGrid = document.getElementById('brain-output-grid');
+
+        const allowedExtensions = new Set(['.md', '.txt', '.json', '.ts', '.tsx', '.js', '.jsx', '.py']);
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const state = {
+            socketReady: false,
+            reconnectTimer: null,
+            reconnectAttempts: 0,
+            currentWorkspaceId: 'personal',
+            snapshot: null,
+            latestEvidence: null,
+            latestModelOutputs: null,
+            audioEnabled: false,
+            developerMode: false,
+            lastLatency: '-- ms',
+            acousticRequestPending: false,
+            microphoneEnabled: false,
+            lastFeedbackAtomId: null
+        };
+
+        const statusLabel = document.getElementById('app-status');
+        const workspaceSelector = document.getElementById('workspace-selector');
+        const workspaceList = document.getElementById('workspace-list');
+        const workspaceChip = document.getElementById('workspace-chip');
+        const timelineList = document.getElementById('timeline-list');
+        const sourceList = document.getElementById('source-list');
+        const messageList = document.getElementById('message-list');
+        const emptyState = document.getElementById('empty-state');
+        const evidenceGroups = document.getElementById('evidence-groups');
+        const branchWarnings = document.getElementById('branch-warnings');
+        const workspaceForm = document.getElementById('workspace-form');
+        const workspaceNameInput = document.getElementById('workspace-name');
+        const input = document.getElementById('thought-input');
+        const sendBtn = document.getElementById('send-btn');
+        const restoreLastBtn = document.getElementById('restore-last-btn');
+        const composerStatus = document.getElementById('composer-status');
+        const importFilesBtn = document.getElementById('import-files-btn');
+        const importFolderBtn = document.getElementById('import-folder-btn');
+        const fileInput = document.getElementById('file-input');
+        const folderInput = document.getElementById('folder-input');
+        const soundBtn = document.getElementById('sound-btn');
+        const micBtn = document.getElementById('mic-btn');
+        const developerToggle = document.getElementById('developer-toggle');
+        const diagnosticsPanel = document.getElementById('diagnostics-panel');
         const qwenOutput = document.getElementById('qwen-output');
         const gemmaOutput = document.getElementById('gemma-output');
-        const memoryBadge = document.getElementById('memory-badge');
-        const memoryContext = document.getElementById('memory-context');
-        const themeSelect = document.getElementById('theme-select');
-        const input = document.getElementById('thought-input');
-        const btn = document.getElementById('modulate-btn');
-        const audioBtn = document.getElementById('audio-btn');
-        const micBtn = document.getElementById('mic-btn');
-        const statusBadge = document.querySelector('.system-status');
+        const metricWorkspace = document.getElementById('metric-workspace');
+        const metricMemories = document.getElementById('metric-memories');
+        const metricPinned = document.getElementById('metric-pinned');
+        const metricLatency = document.getElementById('metric-latency');
 
-        // Stats Elements
-        const statLatency = document.getElementById('stat-latency');
-        const statPeaks = document.getElementById('stat-peaks');
-        let totalPeaks = 0;
-
-        function renderModelOutputs(modelOutputs) {
-            if (!modelOutputs || (!modelOutputs.qwen && !modelOutputs.gemma)) {
-                brainOutputGrid.style.display = 'none';
-                qwenOutput.innerText = '';
-                gemmaOutput.innerText = '';
-                return;
-            }
-
-            qwenOutput.innerText = modelOutputs.qwen || 'No Qwen pass.';
-            gemmaOutput.innerText = modelOutputs.gemma || 'No Gemma pass.';
-            brainOutputGrid.style.display = 'grid';
-        }
-
-        // Theme Toggle
-        themeSelect.addEventListener('change', (e) => {
-            if (e.target.value === 'watercolor') {
-                document.body.classList.add('theme-watercolor');
-                pointMaterial.opacity = 0.65;
-            } else {
-                document.body.classList.remove('theme-watercolor');
-                pointMaterial.opacity = 0.9;
-            }
-            pointMaterial.needsUpdate = true;
-        });
-
-        // Audio System: Crystalline Sonification
+        let ws = null;
         let audioCtx = null;
         let compressor = null;
-        let audioEnabled = false;
         let microphoneStream = null;
         let microphoneSource = null;
         let microphoneAnalyser = null;
         let microphoneData = null;
-        let microphoneEnabled = false;
         let microphoneFrameId = 0;
         let lastMicrophoneSend = 0;
-        let acousticRequestPending = false;
         const MICROPHONE_SEND_INTERVAL_MS = 1200;
         const SPEECH_ENERGY_THRESHOLD = 8;
-        
-        // 4 Octaves of C-Major Pentatonic (130.81Hz to 1046.50Hz)
-        const PENTATONIC_SCALE = [
-            130.81, 146.83, 164.81, 196.00, 220.00, // Octave 3
-            261.63, 293.66, 329.63, 392.00, 440.00, // Octave 4
-            523.25, 587.33, 659.25, 783.99, 880.00, // Octave 5
-            1046.50 // Octave 6 (High C)
-        ];
+        const MAX_RECONNECT_DELAY = 30000;
+        const PENTATONIC_SCALE = [130.81, 146.83, 164.81, 196.0, 220.0, 261.63, 293.66, 329.63, 392.0, 440.0, 523.25, 587.33, 659.25, 783.99, 880.0, 1046.5];
+
+        function setStatus(label) {
+            statusLabel.innerText = label;
+        }
+
+        function setComposerStatus(label) {
+            composerStatus.innerText = label;
+        }
+
+        function formatDate(value) {
+            const date = new Date(value);
+            return Number.isNaN(date.getTime()) ? '' : date.toLocaleString();
+        }
+
+        function shortText(value, max = 140) {
+            const text = String(value ?? '').replace(/\s+/g, ' ').trim();
+            return text.length > max ? `${text.slice(0, max - 3)}...` : text;
+        }
+
+        function clearNode(node) {
+            while (node.firstChild) {
+                node.removeChild(node.firstChild);
+            }
+        }
+
+        function appendTextBlock(parent, tagName, className, text) {
+            const element = document.createElement(tagName);
+            if (className) {
+                element.className = className;
+            }
+            element.textContent = text;
+            parent.appendChild(element);
+            return element;
+        }
+
+        function setEmptyState(container, text) {
+            clearNode(container);
+            appendTextBlock(container, 'div', 'empty-state', text);
+        }
+
+        function roleForAtom(atom) {
+            if (atom.sourceType === 'acoustic') return 'acoustic';
+            return atom.sourceKind === 'assistant' ? 'assistant' : 'user';
+        }
+
+        function labelForAtom(atom) {
+            if (atom.sourceType === 'acoustic') return 'Acoustic Memory';
+            if (atom.sourceKind === 'assistant') return 'Assistant';
+            return 'You';
+        }
+
+        function renderSnapshot(snapshot) {
+            state.snapshot = snapshot;
+            state.currentWorkspaceId = snapshot.workspaceId;
+            workspaceChip.innerText = snapshot.workspace.name;
+            metricWorkspace.innerText = snapshot.workspace.name;
+            metricMemories.innerText = String(snapshot.stats.totalMemories);
+            metricPinned.innerText = String(snapshot.stats.pinnedMemories);
+            metricLatency.innerText = state.lastLatency;
+
+            clearNode(workspaceSelector);
+            snapshot.workspaces.forEach((workspace) => {
+                const option = document.createElement('option');
+                option.value = workspace.id;
+                option.textContent = workspace.name;
+                option.selected = workspace.id === snapshot.workspaceId;
+                workspaceSelector.appendChild(option);
+            });
+
+            clearNode(workspaceList);
+            snapshot.workspaces.forEach((workspace) => {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = `workspace-row${workspace.id === snapshot.workspaceId ? ' active' : ''}`;
+                appendTextBlock(button, 'p', 'row-title', workspace.name);
+                appendTextBlock(button, 'p', 'row-meta', workspace.isDefault ? 'Default workspace' : formatDate(workspace.updatedAt));
+                button.addEventListener('click', () => {
+                    if (workspace.id !== state.currentWorkspaceId) {
+                        refreshSnapshot(workspace.id);
+                    }
+                });
+                workspaceList.appendChild(button);
+            });
+
+            clearNode(timelineList);
+            snapshot.recentActivity.forEach((atom) => {
+                const row = document.createElement('div');
+                row.className = 'timeline-row';
+                appendTextBlock(row, 'p', 'row-title', labelForAtom(atom));
+                appendTextBlock(row, 'p', 'row-subtext', shortText(atom.contentText, 110));
+                appendTextBlock(row, 'p', 'row-meta', formatDate(atom.createdAt));
+                timelineList.appendChild(row);
+            });
+
+            clearNode(sourceList);
+            if (snapshot.importedSources.length === 0) {
+                setEmptyState(sourceList, 'No files imported into this workspace yet.');
+            } else {
+                snapshot.importedSources.forEach((source) => {
+                    const row = document.createElement('div');
+                    row.className = 'source-row';
+                    appendTextBlock(row, 'p', 'row-title', source.sourceTitle);
+                    appendTextBlock(row, 'p', 'row-subtext', `${source.chunkCount} chunks - ${shortText(source.sourceUri, 80)}`);
+                    appendTextBlock(row, 'p', 'row-meta', formatDate(source.lastImportedAt));
+                    sourceList.appendChild(row);
+                });
+            }
+
+            clearNode(messageList);
+            emptyState.style.display = snapshot.recentConversation.length === 0 ? 'block' : 'none';
+            snapshot.recentConversation.forEach((atom) => {
+                const message = document.createElement('div');
+                message.className = `message ${roleForAtom(atom)}`;
+                appendTextBlock(message, 'span', 'message-role', `${labelForAtom(atom)} - ${formatDate(atom.createdAt)}`);
+                appendTextBlock(message, 'div', 'message-body', atom.contentText);
+                messageList.appendChild(message);
+            });
+
+            const scroller = document.getElementById('message-scroller');
+            scroller.scrollTop = scroller.scrollHeight;
+        }
+
+        function renderEvidence(result) {
+            state.latestEvidence = result;
+            clearNode(evidenceGroups);
+            clearNode(branchWarnings);
+
+            if (!result || !result.memoryActive) {
+                setEmptyState(evidenceGroups, 'Ask a question or import files to see cited memory evidence.');
+                return;
+            }
+
+            const groupDefinitions = [
+                ['conversations', 'Conversation Evidence'],
+                ['files', 'File Evidence'],
+                ['standing', 'Standing Summaries'],
+                ['branches', 'Branch Evidence']
+            ];
+
+            groupDefinitions.forEach(([key, label]) => {
+                const citations = result.evidenceGroups?.[key] ?? [];
+                if (!citations.length) return;
+
+                const section = document.createElement('section');
+                section.className = 'citation-group';
+                const title = document.createElement('h3');
+                title.textContent = label;
+                section.appendChild(title);
+
+                const list = document.createElement('div');
+                list.className = 'evidence-list';
+
+                citations.forEach((citation) => {
+                    const row = document.createElement('div');
+                    row.className = 'citation-row';
+                    appendTextBlock(row, 'p', 'row-title', citation.sourceTitle || citation.topicKey || `${citation.kind} #${citation.id}`);
+                    appendTextBlock(row, 'p', 'row-subtext', citation.excerpt);
+                    appendTextBlock(row, 'p', 'row-meta', `${formatDate(citation.createdAt)} - score ${(citation.score ?? 0).toFixed(2)}`);
+
+                    if (citation.kind === 'atom') {
+                        const actions = document.createElement('div');
+                        actions.className = 'citation-actions';
+                        const actionDefs = [
+                            ['pin', citation.isPinned ? 'Pinned' : 'Pin'],
+                            ['exclude', 'Exclude'],
+                            ['mark_wrong', 'Mark Wrong']
+                        ];
+
+                        actionDefs.forEach(([action, label]) => {
+                            const button = document.createElement('button');
+                            button.type = 'button';
+                            button.innerText = label;
+                            button.disabled = action === 'pin' && citation.isPinned;
+                            button.addEventListener('click', () => applyFeedback(citation.id, action));
+                            actions.appendChild(button);
+                        });
+
+                        row.appendChild(actions);
+                    }
+
+                    list.appendChild(row);
+                });
+
+                section.appendChild(list);
+                evidenceGroups.appendChild(section);
+            });
+
+            if (result.branchWarnings?.length) {
+                const warningBlock = document.createElement('div');
+                warningBlock.className = 'warning-block';
+                appendTextBlock(warningBlock, 'h3', '', 'Conflicts');
+
+                result.branchWarnings.forEach((warning) => {
+                    const row = document.createElement('div');
+                    row.className = 'warning-row';
+                    row.textContent = warning;
+                    warningBlock.appendChild(row);
+                });
+
+                branchWarnings.appendChild(warningBlock);
+            }
+        }
+
+        function renderDiagnostics(modelOutputs) {
+            state.latestModelOutputs = modelOutputs;
+
+            if (!state.developerMode || !modelOutputs) {
+                diagnosticsPanel.hidden = true;
+                return;
+            }
+
+            diagnosticsPanel.hidden = false;
+            qwenOutput.innerText = modelOutputs.qwen || 'No Qwen output available.';
+            gemmaOutput.innerText = modelOutputs.gemma || 'No Gemma output available.';
+        }
+
+        async function refreshSnapshot(workspaceId = state.currentWorkspaceId) {
+            const response = await fetch(`/api/bootstrap?workspaceId=${encodeURIComponent(workspaceId)}`);
+            const data = await response.json();
+            if (data.status === 'ok') {
+                renderSnapshot(data.snapshot);
+            }
+        }
+
+        async function createWorkspaceRequest(name) {
+            const response = await fetch('/api/workspaces', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name })
+            });
+            const data = await response.json();
+            if (data.status !== 'ok') {
+                setComposerStatus(data.message || 'Failed to create workspace.');
+                return;
+            }
+            workspaceNameInput.value = '';
+            renderSnapshot(data.snapshot);
+            setComposerStatus(`Workspace "${data.workspace.name}" created.`);
+        }
+
+        async function applyFeedback(atomId, action) {
+            state.lastFeedbackAtomId = atomId;
+            const response = await fetch('/api/memory/feedback', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    atomId,
+                    action,
+                    workspaceId: state.currentWorkspaceId
+                })
+            });
+            const data = await response.json();
+            if (data.status !== 'ok') {
+                setComposerStatus(data.message || 'Could not update memory feedback.');
+                return;
+            }
+            renderSnapshot(data.snapshot);
+            setComposerStatus(`Memory ${action.replace('_', ' ')} applied.`);
+        }
+
+        async function importSelectedFiles(fileList) {
+            const files = Array.from(fileList)
+                .filter((file) => allowedExtensions.has(`.${file.name.split('.').pop()?.toLowerCase() || ''}`))
+                .map(async (file) => ({
+                    name: file.name,
+                    content: await file.text(),
+                    relativePath: file.webkitRelativePath || file.name,
+                    lastModified: file.lastModified
+                }));
+
+            const payloadFiles = await Promise.all(files);
+            if (!payloadFiles.length) {
+                setComposerStatus('No supported files selected.');
+                return;
+            }
+
+            setComposerStatus(`Importing ${payloadFiles.length} file(s)...`);
+            const response = await fetch('/api/import', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    workspaceId: state.currentWorkspaceId,
+                    files: payloadFiles
+                })
+            });
+            const data = await response.json();
+            if (data.status !== 'ok') {
+                setComposerStatus(data.message || 'Import failed.');
+                return;
+            }
+            renderSnapshot(data.snapshot);
+            setComposerStatus(`Imported ${data.result.importedFiles} file(s), skipped ${data.result.skippedFiles}.`);
+        }
 
         async function initAudio() {
+            if (audioCtx) return;
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            
-            // Dynamics Compressor to prevent clipping from massive chords
             compressor = audioCtx.createDynamicsCompressor();
             compressor.threshold.setValueAtTime(-24, audioCtx.currentTime);
             compressor.knee.setValueAtTime(30, audioCtx.currentTime);
             compressor.ratio.setValueAtTime(12, audioCtx.currentTime);
             compressor.attack.setValueAtTime(0.003, audioCtx.currentTime);
             compressor.release.setValueAtTime(0.25, audioCtx.currentTime);
-            
             compressor.connect(audioCtx.destination);
         }
-
-        audioBtn.onclick = async () => {
-            if (!audioCtx) await initAudio();
-            audioEnabled = !audioEnabled;
-            if (audioEnabled) {
-                await audioCtx.resume();
-                audioBtn.classList.add('active');
-            } else {
-                audioBtn.classList.remove('active');
-            }
-        };
 
         function normalizeFrequencyToPhase(frequencyData) {
             return Array.from(frequencyData, (value) => (value / 255) * Math.PI * 2);
         }
 
         function stopAcousticUplink() {
-            microphoneEnabled = false;
-            acousticRequestPending = false;
+            state.microphoneEnabled = false;
+            state.acousticRequestPending = false;
             micBtn.classList.remove('active');
 
             if (microphoneFrameId) {
@@ -539,12 +1014,11 @@
 
             microphoneAnalyser = null;
             microphoneData = null;
-            setSystemStatus(socketReady ? 'Dual-Brain: Active' : 'Stream: Offline');
+            setStatus(state.socketReady ? 'Connected' : 'Offline');
         }
 
         function sampleAcousticUplink() {
-            if (!microphoneEnabled || !microphoneAnalyser || !microphoneData) return;
-
+            if (!state.microphoneEnabled || !microphoneAnalyser || !microphoneData) return;
             microphoneAnalyser.getByteFrequencyData(microphoneData);
 
             const averageEnergy = microphoneData.reduce((sum, value) => sum + value, 0) / microphoneData.length;
@@ -552,16 +1026,20 @@
 
             if (
                 averageEnergy > SPEECH_ENERGY_THRESHOLD &&
-                socketReady &&
-                !acousticRequestPending &&
+                state.socketReady &&
+                !state.acousticRequestPending &&
                 now - lastMicrophoneSend >= MICROPHONE_SEND_INTERVAL_MS
             ) {
                 const waveA = normalizeFrequencyToPhase(microphoneData);
-                acousticRequestPending = true;
-                ws.send(JSON.stringify({ waveA, source: 'acoustic-uplink' }));
+                state.acousticRequestPending = true;
+                ws.send(JSON.stringify({
+                    waveA,
+                    source: 'acoustic-uplink',
+                    workspaceId: state.currentWorkspaceId
+                }));
                 lastMicrophoneSend = now;
-                statLatency.innerText = 'Listening...';
-                setSystemStatus('Acoustic Processing');
+                setComposerStatus('Listening and sending acoustic signature...');
+                setStatus('Acoustic processing');
             }
 
             microphoneFrameId = requestAnimationFrame(sampleAcousticUplink);
@@ -569,12 +1047,11 @@
 
         async function startAcousticUplink() {
             if (!navigator.mediaDevices?.getUserMedia) {
-                responseText.innerText = 'Microphone capture is not available in this browser.';
-                overlay.style.display = 'block';
+                setComposerStatus('Microphone capture is not available in this browser.');
                 return;
             }
 
-            if (!audioCtx) await initAudio();
+            await initAudio();
             await audioCtx.resume();
 
             microphoneStream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -582,42 +1059,52 @@
             microphoneAnalyser = audioCtx.createAnalyser();
             microphoneAnalyser.fftSize = 512;
             microphoneData = new Uint8Array(microphoneAnalyser.frequencyBinCount);
-
             microphoneSource.connect(microphoneAnalyser);
-            microphoneEnabled = true;
+
+            state.microphoneEnabled = true;
             micBtn.classList.add('active');
-            setSystemStatus('Acoustic Uplink');
+            setStatus('Acoustic lab');
             sampleAcousticUplink();
         }
 
-        micBtn.onclick = async () => {
-            if (microphoneEnabled) {
-                stopAcousticUplink();
-                return;
-            }
+        function playHolographicChord(vector) {
+            if (!state.audioEnabled || !audioCtx || !compressor) return;
 
-            try {
-                await startAcousticUplink();
-            } catch (error) {
-                stopAcousticUplink();
-                const message = error instanceof Error ? error.message : String(error);
-                responseText.innerText = `Acoustic uplink failed: ${message}`;
-                overlay.style.display = 'block';
-            }
-        };
+            const now = audioCtx.currentTime;
+            vector.slice(0, 48).forEach((unit, index) => {
+                const time = now + index * 0.02;
+                const freqIdx = Math.floor(Math.abs(unit.re * 20)) % PENTATONIC_SCALE.length;
+                const freq = PENTATONIC_SCALE[freqIdx];
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                const panner = audioCtx.createStereoPanner();
 
-        // 3D Engine: Holographic Matrix
+                osc.type = index % 3 === 0 ? 'triangle' : 'sine';
+                osc.frequency.setValueAtTime(freq, time);
+                gain.gain.setValueAtTime(0, time);
+                gain.gain.linearRampToValueAtTime(0.06, time + 0.05);
+                gain.gain.exponentialRampToValueAtTime(0.001, time + 1.1);
+                panner.pan.setValueAtTime(Math.max(-1, Math.min(1, unit.im)), time);
+
+                osc.connect(gain);
+                gain.connect(panner);
+                panner.connect(compressor);
+                osc.start(time);
+                osc.stop(time + 1.15);
+            });
+        }
+
+        const visualizerHost = document.getElementById('visualizer-host');
         const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / (window.innerHeight - 80), 0.1, 1000);
+        const camera = new THREE.PerspectiveCamera(70, 1, 0.1, 1000);
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-
         const crystalGroup = new THREE.Group();
-        const pointGeometry = new THREE.CircleGeometry(0.035, 8);
+        const pointGeometry = new THREE.CircleGeometry(0.028, 8);
         const pointMaterial = new THREE.MeshBasicMaterial({
             color: 0xffffff,
             transparent: true,
-            opacity: 0.9,
+            opacity: 0.88,
             depthWrite: false,
             blending: THREE.AdditiveBlending,
             vertexColors: true,
@@ -629,27 +1116,57 @@
         let pointCapacity = 0;
 
         scene.add(crystalGroup);
-        camera.position.z = 5;
+        camera.position.z = 5.6;
+        visualizerHost.appendChild(renderer.domElement);
 
-        // WebSocket
-        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        let ws = null;
-        let socketReady = false;
-        let reconnectTimer = null;
-        let reconnectAttempts = 0;
-        const MAX_RECONNECT_DELAY = 30000;
-        btn.disabled = true;
-        micBtn.disabled = true;
+        function ensurePointCloud(instanceCount) {
+            if (pointCloud && instanceCount <= pointCapacity) return;
+            if (pointCloud) crystalGroup.remove(pointCloud);
 
-        function setSystemStatus(label) {
-            statusBadge.innerText = label;
+            pointCapacity = Math.max(512, Math.ceil(instanceCount / 512) * 512);
+            pointCloud = new THREE.InstancedMesh(pointGeometry, pointMaterial, pointCapacity);
+            pointCloud.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+            crystalGroup.add(pointCloud);
         }
 
-        function handleResize() {
-            const w = window.innerWidth;
-            const h = window.innerHeight - 80;
-            renderer.setSize(w, h);
-            camera.aspect = w / h;
+        function draw3D(vector) {
+            if (!Array.isArray(vector) || vector.length === 0) return;
+            ensurePointCloud(vector.length);
+            pointCloud.count = vector.length;
+
+            vector.forEach((unit, index) => {
+                const radius = 1.85 + unit.re;
+                const angle = index * 0.18;
+                const x = Math.cos(angle) * radius;
+                const y = Math.sin(angle) * radius;
+                const z = unit.im * 2.4;
+                const scale = 0.36 + Math.abs(unit.re) * 0.7;
+
+                instanceDummy.position.set(x, y, z);
+                instanceDummy.scale.setScalar(scale);
+                instanceDummy.rotation.set(0, 0, 0);
+                instanceDummy.updateMatrix();
+                pointCloud.setMatrixAt(index, instanceDummy.matrix);
+
+                instanceColor.setRGB(
+                    THREE.MathUtils.clamp(0.3 + (unit.re + 1) / 4, 0, 1),
+                    THREE.MathUtils.clamp(0.55 + unit.im / 2, 0, 1),
+                    0.96
+                );
+                pointCloud.setColorAt(index, instanceColor);
+            });
+
+            pointCloud.instanceMatrix.needsUpdate = true;
+            if (pointCloud.instanceColor) {
+                pointCloud.instanceColor.needsUpdate = true;
+            }
+        }
+
+        function resizeVisualizer() {
+            const width = visualizerHost.clientWidth || 320;
+            const height = visualizerHost.clientHeight || 260;
+            renderer.setSize(width, height);
+            camera.aspect = width / height;
             camera.updateProjectionMatrix();
         }
 
@@ -660,203 +1177,182 @@
             renderer.render(scene, camera);
         }
 
-        function submitThought() {
-            const val = input.value.trim();
-            if (val && socketReady) {
-                overlay.style.display = 'none';
-                ws.send(JSON.stringify({ thought: val }));
-                input.value = '';
-                statLatency.innerText = 'Syncing...';
-            }
+        function scheduleReconnect() {
+            if (state.reconnectTimer) return;
+            const delay = Math.min(1000 * Math.pow(2, state.reconnectAttempts), MAX_RECONNECT_DELAY);
+            state.reconnectAttempts += 1;
+            setStatus(`Reconnecting in ${Math.ceil(delay / 1000)}s`);
+            state.reconnectTimer = setTimeout(() => {
+                state.reconnectTimer = null;
+                connectWebSocket();
+            }, delay);
         }
 
-        btn.onclick = submitThought;
-        input.addEventListener('keydown', (event) => {
-            if (event.key === 'Enter') submitThought();
-        });
-
         function connectWebSocket() {
-            if (reconnectTimer) {
-                clearTimeout(reconnectTimer);
-                reconnectTimer = null;
+            if (state.reconnectTimer) {
+                clearTimeout(state.reconnectTimer);
+                state.reconnectTimer = null;
             }
 
             ws = new WebSocket(`${wsProtocol}//${window.location.host}/stream`);
 
             ws.onopen = () => {
-                socketReady = true;
-                reconnectAttempts = 0;
-                btn.disabled = false;
+                state.socketReady = true;
+                state.reconnectAttempts = 0;
+                sendBtn.disabled = false;
                 micBtn.disabled = false;
-                setSystemStatus('Dual-Brain: Active');
+                setStatus('Connected');
+                setComposerStatus('Memory engine ready.');
             };
 
             ws.onclose = () => {
-                socketReady = false;
-                btn.disabled = true;
+                state.socketReady = false;
+                sendBtn.disabled = true;
                 micBtn.disabled = true;
-                if (microphoneEnabled) stopAcousticUplink();
+                if (state.microphoneEnabled) stopAcousticUplink();
                 scheduleReconnect();
             };
 
             ws.onerror = () => {
-                socketReady = false;
-                btn.disabled = true;
+                state.socketReady = false;
+                sendBtn.disabled = true;
                 micBtn.disabled = true;
-                if (microphoneEnabled) stopAcousticUplink();
+                if (state.microphoneEnabled) stopAcousticUplink();
+                scheduleReconnect();
+                try {
+                    ws.close();
+                } catch {}
             };
 
-            ws.onmessage = (msg) => {
+            ws.onmessage = async (event) => {
                 let data;
                 try {
-                    data = JSON.parse(msg.data);
+                    data = JSON.parse(event.data);
                 } catch {
-                    console.error('Failed to parse server message');
                     return;
                 }
 
                 if (data.status === 'thought_processed') {
+                    state.lastLatency = data.latencyMs ? `${data.latencyMs} ms` : '-- ms';
+                    metricLatency.innerText = state.lastLatency;
                     if (data.inputMode === 'acoustic-uplink') {
-                        acousticRequestPending = false;
-                        setSystemStatus(microphoneEnabled ? 'Acoustic Uplink' : 'Dual-Brain: Active');
+                        state.acousticRequestPending = false;
+                        setStatus(state.microphoneEnabled ? 'Acoustic lab' : 'Connected');
                     }
-
-                    responseText.innerText = `Final Merged Response\n\n${data.response}`;
-                    renderModelOutputs(data.modelOutputs);
-
-                    if (data.memoryActive) {
-                        memoryBadge.style.display = 'block';
-                        memoryContext.innerText = data.context.substring(0, 100) + '...';
-                    } else {
-                        memoryBadge.style.display = 'none';
+                    renderEvidence(data);
+                    renderDiagnostics(data.modelOutputs);
+                    if (Array.isArray(data.vector)) {
+                        draw3D(data.vector);
+                        playHolographicChord(data.vector);
                     }
+                    await refreshSnapshot(data.workspaceId || state.currentWorkspaceId);
+                    setComposerStatus('Memory response ready.');
+                    return;
+                }
 
-                    statLatency.innerText = data.latencyMs ? data.latencyMs + ' ms' : '-- ms';
-                    totalPeaks += 1;
-                    statPeaks.innerText = totalPeaks;
-
-                    overlay.style.display = 'block';
-                    draw3D(data.vector);
-                    playHolographicChord(data.vector);
-                } else if (data.status === 'error') {
-                    acousticRequestPending = false;
-                    if (microphoneEnabled) {
-                        setSystemStatus('Acoustic Uplink');
-                    }
-                    responseText.innerText = data.message;
-                    renderModelOutputs(null);
-                    memoryBadge.style.display = 'none';
-                    overlay.style.display = 'block';
-                    statLatency.innerText = '-- ms';
-                } else if (data.status === 'processed') {
-                    statLatency.innerText = data.samples ? `${data.samples} acoustic bins` : '-- ms';
-                    totalPeaks += 1;
-                    statPeaks.innerText = totalPeaks;
-
-                    if (data.vector) {
+                if (data.status === 'processed') {
+                    if (Array.isArray(data.vector)) {
                         draw3D(data.vector);
                     }
+                    setComposerStatus(`${data.samples || 0} acoustic bins processed.`);
+                    return;
+                }
+
+                if (data.status === 'error') {
+                    state.acousticRequestPending = false;
+                    setComposerStatus(data.message || 'The memory engine returned an error.');
                 }
             };
         }
 
-        function scheduleReconnect() {
-            if (reconnectTimer) return;
-            const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), MAX_RECONNECT_DELAY);
-            reconnectAttempts++;
-            setSystemStatus(`Reconnecting in ${Math.ceil(delay / 1000)}s...`);
-            reconnectTimer = setTimeout(() => {
-                reconnectTimer = null;
-                setSystemStatus('Reconnecting...');
-                connectWebSocket();
-            }, delay);
+        function submitThought() {
+            const thought = input.value.trim();
+            if (!thought || !state.socketReady) return;
+            ws.send(JSON.stringify({
+                thought,
+                workspaceId: state.currentWorkspaceId
+            }));
+            input.value = '';
+            setComposerStatus('Asking Chronicle Memory...');
         }
 
-        connectWebSocket();
+        workspaceForm.addEventListener('submit', (event) => {
+            event.preventDefault();
+            const value = workspaceNameInput.value.trim();
+            if (value) {
+                createWorkspaceRequest(value);
+            }
+        });
 
-        function playHolographicChord(vector) {
-            if (!audioEnabled || !audioCtx) return;
+        workspaceSelector.addEventListener('change', (event) => {
+            refreshSnapshot(event.target.value);
+        });
 
-            const now = audioCtx.currentTime;
-            const audibleVector = vector.slice(0, 96);
+        sendBtn.addEventListener('click', submitThought);
+        input.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                submitThought();
+            }
+        });
 
-            audibleVector.forEach((v, index) => {
-                const time = now + (index * 0.015);
-                
-                const freqIdx = Math.floor(Math.abs(v.re * 20)) % PENTATONIC_SCALE.length;
-                const freq = PENTATONIC_SCALE[freqIdx];
+        restoreLastBtn.addEventListener('click', () => {
+            if (state.lastFeedbackAtomId !== null) {
+                applyFeedback(state.lastFeedbackAtomId, 'restore');
+            }
+        });
 
-                const osc = audioCtx.createOscillator();
-                const gain = audioCtx.createGain();
-                const panner = audioCtx.createStereoPanner();
+        importFilesBtn.addEventListener('click', () => fileInput.click());
+        importFolderBtn.addEventListener('click', () => folderInput.click());
+        fileInput.addEventListener('change', async () => {
+            if (fileInput.files?.length) {
+                await importSelectedFiles(fileInput.files);
+                fileInput.value = '';
+            }
+        });
+        folderInput.addEventListener('change', async () => {
+            if (folderInput.files?.length) {
+                await importSelectedFiles(folderInput.files);
+                folderInput.value = '';
+            }
+        });
 
-                osc.type = index % 3 === 0 ? 'triangle' : 'sine';
-                osc.frequency.setValueAtTime(freq, time);
+        developerToggle.addEventListener('click', () => {
+            state.developerMode = !state.developerMode;
+            developerToggle.classList.toggle('active', state.developerMode);
+            renderDiagnostics(state.latestModelOutputs);
+        });
 
-                gain.gain.setValueAtTime(0, time);
-                gain.gain.linearRampToValueAtTime(0.1, time + 0.05);
-                gain.gain.exponentialRampToValueAtTime(0.001, time + 1.5);
+        soundBtn.addEventListener('click', async () => {
+            await initAudio();
+            state.audioEnabled = !state.audioEnabled;
+            if (state.audioEnabled) {
+                await audioCtx.resume();
+            }
+            soundBtn.classList.toggle('active', state.audioEnabled);
+        });
 
-                panner.pan.setValueAtTime(Math.max(-1, Math.min(1, v.im)), time);
-
-                osc.connect(gain);
-                gain.connect(panner);
-                panner.connect(compressor);
-
-                osc.start(time);
-                osc.stop(time + 1.6);
-            });
-        }
-
-        function ensureInstancedPointCloud(instanceCount) {
-            if (pointCloud && instanceCount <= pointCapacity) return;
-
-            if (pointCloud) {
-                crystalGroup.remove(pointCloud);
+        micBtn.addEventListener('click', async () => {
+            if (state.microphoneEnabled) {
+                stopAcousticUplink();
+                return;
             }
 
-            pointCapacity = Math.max(1024, Math.ceil(instanceCount / 1024) * 1024);
-            pointCloud = new THREE.InstancedMesh(pointGeometry, pointMaterial, pointCapacity);
-            pointCloud.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-            crystalGroup.add(pointCloud);
-        }
-
-        function draw3D(vector) {
-            ensureInstancedPointCloud(vector.length);
-            pointCloud.count = vector.length;
-
-            vector.forEach((v, i) => {
-                const radius = 2 + v.re;
-                const angle = i * 0.2;
-                const x = Math.cos(angle) * radius;
-                const y = Math.sin(angle) * radius;
-                const z = v.im * 3;
-                const scale = 0.45 + Math.abs(v.re) * 0.9;
-
-                instanceDummy.position.set(x, y, z);
-                instanceDummy.rotation.set(0, 0, 0);
-                instanceDummy.scale.setScalar(scale);
-                instanceDummy.updateMatrix();
-                pointCloud.setMatrixAt(i, instanceDummy.matrix);
-
-                instanceColor.setRGB(
-                    THREE.MathUtils.clamp(0.2 + (v.re + 1) / 4, 0, 1),
-                    THREE.MathUtils.clamp(0.8 + v.im / 2, 0, 1),
-                    0.9
-                );
-                pointCloud.setColorAt(i, instanceColor);
-            });
-
-            pointCloud.instanceMatrix.needsUpdate = true;
-            if (pointCloud.instanceColor) {
-                pointCloud.instanceColor.needsUpdate = true;
+            try {
+                await startAcousticUplink();
+            } catch (error) {
+                stopAcousticUplink();
+                setComposerStatus(error instanceof Error ? error.message : String(error));
             }
-        }
+        });
 
-        window.addEventListener('resize', handleResize);
-        host.appendChild(renderer.domElement);
-        handleResize();
+        window.addEventListener('resize', resizeVisualizer);
+        new ResizeObserver(resizeVisualizer).observe(visualizerHost);
+
+        resizeVisualizer();
         animate();
+        connectWebSocket();
+        refreshSnapshot().catch(() => setComposerStatus('Could not load workspace snapshot.'));
     </script>
 </body>
 </html>

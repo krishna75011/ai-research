@@ -45,28 +45,30 @@ async function initializeResources(): Promise<BrainResources> {
     assertModelExists(qwenPath);
     assertModelExists(gemmaPath);
 
-    console.log('Initializing dual-brain model contexts...');
+    console.log('Initializing dual-model contexts...');
 
     const qwenModel = await llama.loadModel({ modelPath: qwenPath });
     const qwenContext = await qwenModel.createContext({
-        contextSize: 1024,
+        contextSize: 2048,
         sequences: 1,
         threads: 2
     });
 
     const gemmaModel = await llama.loadModel({ modelPath: gemmaPath });
     const gemmaContext = await gemmaModel.createContext({
-        contextSize: 1024,
+        contextSize: 2048,
         sequences: 1,
         threads: 4
     });
 
-    console.log('Dual-brain model contexts are ready.');
-
     return {
         qwenContext,
         gemmaContext,
-        systemPrompt: 'You are the Virtual Crystal AI. Synthesize logical harmonic waves. Be precise and concise.'
+        systemPrompt: [
+            'You are Chronicle Memory, a local-first personal memory assistant.',
+            'Answer directly, stay grounded in retrieved evidence when it is provided, and do not invent prior discussions.',
+            'If the evidence contains conflicts, acknowledge them plainly instead of collapsing them into one false certainty.'
+        ].join(' ')
     };
 }
 
@@ -95,20 +97,19 @@ export function buildSystemPrompt(basePrompt: string, memoryContext?: string | n
 export async function processWaveThought(input: string, memoryContext?: string | null, useDualBrain = true): Promise<WaveThoughtResult> {
     return withInferenceLock(async () => {
         const { qwenContext, gemmaContext, systemPrompt } = await ensureResources();
-        let alphaSession: LlamaChatSession | null = null;
-        let betaSession: LlamaChatSession | null = null;
+        let qwenSession: LlamaChatSession | null = null;
+        let gemmaSession: LlamaChatSession | null = null;
+        let synthesisSession: LlamaChatSession | null = null;
         const startTime = Date.now();
 
         try {
             const contextualSystemPrompt = buildSystemPrompt(systemPrompt, memoryContext);
 
-            alphaSession = createSession(qwenContext, contextualSystemPrompt);
-            betaSession = createSession(gemmaContext, contextualSystemPrompt);
-
-            console.log('Interference initialized...');
+            qwenSession = createSession(qwenContext, contextualSystemPrompt);
+            gemmaSession = createSession(gemmaContext, contextualSystemPrompt);
 
             if (!useDualBrain) {
-                const finalResponse = await betaSession.prompt(input);
+                const finalResponse = await gemmaSession.prompt(input);
                 return {
                     finalResponse,
                     qwenOutput: null,
@@ -116,28 +117,42 @@ export async function processWaveThought(input: string, memoryContext?: string |
                 };
             }
 
-            const [alphaResponse, betaResponse] = await Promise.all([
-                alphaSession.prompt(input),
-                betaSession.prompt(input)
+            const [qwenOutput, gemmaOutput] = await Promise.all([
+                qwenSession.prompt(input),
+                gemmaSession.prompt(input)
             ]);
 
-            const interferencePrompt =
-                `[Qwen Output]: ${alphaResponse}\n` +
-                `[Gemma Output]: ${betaResponse}\n` +
-                'Merge these two model outputs into a single, cohesive response. Focus on the overlapping constructive ideas and keep the final answer direct.';
+            qwenSession.dispose({ disposeSequence: true });
+            qwenSession = null;
+            gemmaSession.dispose({ disposeSequence: true });
+            gemmaSession = null;
 
-            const finalResponse = await alphaSession.prompt(interferencePrompt);
+            synthesisSession = createSession(qwenContext, contextualSystemPrompt);
+            const mergePrompt = [
+                '[Qwen Output]:',
+                qwenOutput,
+                '',
+                '[Gemma Output]:',
+                gemmaOutput,
+                '',
+                'Merge these two model outputs into one final answer.',
+                'Keep the answer concise, grounded, and useful.',
+                'Do not mention the internal model names unless the user explicitly asked for diagnostics.'
+            ].join('\n');
+
+            const finalResponse = await synthesisSession.prompt(mergePrompt);
             const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+            console.log(`Final response synthesized in ${duration}s`);
 
-            console.log(`Constructive logic synthesized in ${duration}s`);
             return {
                 finalResponse,
-                qwenOutput: alphaResponse,
-                gemmaOutput: betaResponse
+                qwenOutput,
+                gemmaOutput
             };
         } finally {
-            alphaSession?.dispose({ disposeSequence: true });
-            betaSession?.dispose({ disposeSequence: true });
+            qwenSession?.dispose({ disposeSequence: true });
+            gemmaSession?.dispose({ disposeSequence: true });
+            synthesisSession?.dispose({ disposeSequence: true });
         }
     });
 }

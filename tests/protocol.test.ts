@@ -10,17 +10,19 @@ describe('stream protocol', () => {
     });
 
     test('parses serialized thought messages', () => {
-        expect(parseStreamMessage(JSON.stringify({ thought: '  <ping>  ' }))).toEqual({
+        expect(parseStreamMessage(JSON.stringify({ thought: '  <ping>  ', workspaceId: 'project-1' }))).toEqual({
             kind: 'thought',
-            thought: 'ping'
+            thought: 'ping',
+            workspaceId: 'project-1'
         });
     });
 
     test('parses numeric wave messages', () => {
-        expect(parseStreamMessage({ waveA: [0, 1], waveB: [2, 3] })).toEqual({
+        expect(parseStreamMessage({ waveA: [0, 1], waveB: [2, 3], workspaceId: 'workspace-a' })).toEqual({
             kind: 'wave',
             waveA: [0, 1],
-            waveB: [2, 3]
+            waveB: [2, 3],
+            workspaceId: 'workspace-a'
         });
     });
 
@@ -34,6 +36,14 @@ describe('stream protocol', () => {
             expect(result!.waveB[1]).toBeCloseTo(0.5 + Math.PI / 2);
             expect(result!.source).toBe('acoustic-uplink');
         }
+    });
+
+    test('drops blank workspace ids', () => {
+        expect(parseStreamMessage({ thought: 'hello', workspaceId: '   ' })).toEqual({
+            kind: 'thought',
+            thought: 'hello',
+            workspaceId: undefined
+        });
     });
 
     test('rejects malformed payloads', () => {

@@ -1,8 +1,19 @@
-import { staticPlugin } from '@elysiajs/static';
 import { Elysia } from 'elysia';
 import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
+import path from 'node:path';
 import { summarizeAcousticWave } from './acousticWave';
-import { containsOrchestrationArtifact, probeMemory, recordInteraction } from './memoryBrain';
+import {
+    containsOrchestrationArtifact,
+    createWorkspace,
+    getWorkspaceSnapshot,
+    importFilesToMemory,
+    probeMemory,
+    recordInteraction,
+    updateMemoryFeedback,
+    DEFAULT_WORKSPACE_ID,
+    type FileImportFile,
+    type MemoryFeedbackAction
+} from './memoryBrain';
 import { processWaveThought } from './localBrain';
 import { textToWave } from './modulator';
 import { parseStreamMessage } from './protocol';
@@ -10,15 +21,29 @@ import { simulateInterference, type WaveUnit } from './virtualCrystal';
 
 const THOUGHT_THROTTLE_MS = 1500;
 const ACOUSTIC_THROTTLE_MS = 2500;
+const DEFAULT_PORT = 3000;
 
 if (!existsSync('logs')) {
     mkdirSync('logs', { recursive: true });
 }
 
+const PUBLIC_DIR = path.resolve('public');
+const PORT = Number.isFinite(Number(process.env.PORT)) && Number(process.env.PORT) > 0
+    ? Number(process.env.PORT)
+    : DEFAULT_PORT;
+
 const clientThrottles = new Map<string, number>();
 const clientAcousticThrottles = new Map<string, number>();
 const activeAcousticClients = new Set<string>();
 const activeConnections = new Set<{ close(): void }>();
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function getWorkspaceId(value: unknown): string | undefined {
+    return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
 
 function createTextVector(text: string): WaveUnit[] {
     const waveA = textToWave(text);
@@ -26,7 +51,25 @@ function createTextVector(text: string): WaveUnit[] {
     return simulateInterference(waveA, waveB);
 }
 
-async function recordAssistantMemory(response: string, sessionId: string, turnId: string, parentAtomId: number, inputMode: 'text' | 'acoustic-uplink') {
+function servePublicAsset(assetPath: string) {
+    const normalized = assetPath.replace(/\\/g, '/').replace(/^\/+/, '');
+    const resolved = path.resolve(PUBLIC_DIR, normalized);
+
+    if (resolved !== PUBLIC_DIR && !resolved.startsWith(`${PUBLIC_DIR}${path.sep}`)) {
+        return null;
+    }
+
+    return existsSync(resolved) ? Bun.file(resolved) : null;
+}
+
+async function recordAssistantMemory(
+    response: string,
+    workspaceId: string,
+    sessionId: string,
+    turnId: string,
+    parentAtomId: number,
+    inputMode: 'text' | 'acoustic-uplink'
+) {
     if (containsOrchestrationArtifact(response)) {
         return;
     }
@@ -36,11 +79,14 @@ async function recordAssistantMemory(response: string, sessionId: string, turnId
         waveSignature: createTextVector(response),
         sourceKind: 'assistant',
         modality: 'system_derived',
+        workspaceId,
         sessionId,
         turnId,
         parentAtomId,
         salience: 0.78,
         confidence: 0.62,
+        sourceType: 'conversation',
+        sourceTitle: 'Conversation',
         rawPayload: {
             inputMode,
             response
@@ -48,8 +94,32 @@ async function recordAssistantMemory(response: string, sessionId: string, turnId
     });
 }
 
+function parseImportFiles(body: unknown): { workspaceId?: string; files: FileImportFile[] } | null {
+    if (!isRecord(body) || !Array.isArray(body.files)) return null;
+
+    const workspaceId = getWorkspaceId(body.workspaceId);
+    const files: FileImportFile[] = [];
+
+    for (const file of body.files) {
+        if (!isRecord(file) || typeof file.name !== 'string' || typeof file.content !== 'string') {
+            return null;
+        }
+
+        files.push({
+            name: file.name,
+            content: file.content,
+            relativePath: typeof file.relativePath === 'string' ? file.relativePath : null,
+            sourceUri: typeof file.sourceUri === 'string' ? file.sourceUri : null,
+            sourceTitle: typeof file.sourceTitle === 'string' ? file.sourceTitle : null,
+            sourceHash: typeof file.sourceHash === 'string' ? file.sourceHash : null,
+            lastModified: typeof file.lastModified === 'number' && Number.isFinite(file.lastModified) ? file.lastModified : null
+        });
+    }
+
+    return { workspaceId, files };
+}
+
 const app = new Elysia()
-    .use(staticPlugin())
     .onError(({ code, error }) => {
         if (code === 'NOT_FOUND') return;
 
@@ -62,10 +132,77 @@ const app = new Elysia()
     })
     .get('/', () => Bun.file('public/index.html'))
     .get('/favicon.ico', () => Bun.file('public/favicon.ico'))
+    .get('/public/*', ({ params, set }) => {
+        const file = servePublicAsset(params['*']);
+        if (!file) {
+            set.status = 404;
+            return 'NOT_FOUND';
+        }
+
+        return file;
+    })
+    .get('/api/bootstrap', async ({ query }) => {
+        const workspaceId = getWorkspaceId(isRecord(query) ? query.workspaceId : undefined) ?? DEFAULT_WORKSPACE_ID;
+        return {
+            status: 'ok',
+            snapshot: await getWorkspaceSnapshot({ workspaceId })
+        };
+    })
+    .post('/api/workspaces', async ({ body, set }) => {
+        if (!isRecord(body) || typeof body.name !== 'string' || !body.name.trim()) {
+            set.status = 400;
+            return { status: 'error', message: 'Workspace name is required.' };
+        }
+
+        const workspace = await createWorkspace(body.name);
+        return {
+            status: 'ok',
+            workspace,
+            snapshot: await getWorkspaceSnapshot({ workspaceId: workspace.id })
+        };
+    })
+    .post('/api/import', async ({ body, set }) => {
+        const parsed = parseImportFiles(body);
+        if (!parsed) {
+            set.status = 400;
+            return { status: 'error', message: 'Invalid import payload.' };
+        }
+
+        const result = await importFilesToMemory(parsed.files, { workspaceId: parsed.workspaceId });
+        return {
+            status: 'ok',
+            result,
+            snapshot: await getWorkspaceSnapshot({ workspaceId: result.workspaceId })
+        };
+    })
+    .post('/api/memory/feedback', async ({ body, set }) => {
+        if (!isRecord(body) || typeof body.atomId !== 'number' || !Number.isFinite(body.atomId) || typeof body.action !== 'string') {
+            set.status = 400;
+            return { status: 'error', message: 'Invalid feedback payload.' };
+        }
+
+        const action = body.action as MemoryFeedbackAction;
+        if (!['pin', 'exclude', 'mark_wrong', 'restore'].includes(action)) {
+            set.status = 400;
+            return { status: 'error', message: 'Unsupported feedback action.' };
+        }
+
+        const atom = await updateMemoryFeedback(body.atomId, action, { workspaceId: getWorkspaceId(body.workspaceId) });
+        if (!atom) {
+            set.status = 404;
+            return { status: 'error', message: 'Memory atom not found.' };
+        }
+
+        return {
+            status: 'ok',
+            atom,
+            snapshot: await getWorkspaceSnapshot({ workspaceId: atom.workspaceId })
+        };
+    })
     .ws('/stream', {
         open(ws) {
             activeConnections.add(ws);
-            console.log('Client connected to Virtual Crystal Stream');
+            console.log('Client connected to Chronicle Memory stream');
         },
         close(ws) {
             activeConnections.delete(ws);
@@ -83,40 +220,46 @@ const app = new Elysia()
                     return;
                 }
 
+                const workspaceId = parsedMessage.workspaceId ?? DEFAULT_WORKSPACE_ID;
+
                 if (parsedMessage.kind === 'thought') {
                     const now = Date.now();
                     const lastThought = clientThrottles.get(ws.id) || 0;
                     if (now - lastThought < THOUGHT_THROTTLE_MS) {
-                        ws.send({ status: 'error', message: 'Resonance saturated. Wait for wave stabilization.' });
+                        ws.send({ status: 'error', message: 'Memory is still synchronizing. Wait a moment and try again.' });
                         return;
                     }
                     clientThrottles.set(ws.id, now);
 
                     const turnId = crypto.randomUUID();
                     const thoughtVector = createTextVector(parsedMessage.thought);
-                    const memoryProbe = await probeMemory(parsedMessage.thought, thoughtVector);
+                    const memoryProbe = await probeMemory(parsedMessage.thought, thoughtVector, { workspaceId });
 
                     const userAtom = await recordInteraction({
                         contentText: parsedMessage.thought,
                         waveSignature: thoughtVector,
                         sourceKind: 'user',
                         modality: 'text',
+                        workspaceId,
                         sessionId: ws.id,
                         turnId,
                         salience: 0.84,
                         confidence: 0.82,
+                        sourceType: 'conversation',
+                        sourceTitle: 'Conversation',
                         rawPayload: {
                             thought: parsedMessage.thought
                         }
                     });
 
                     const aiResult = await processWaveThought(parsedMessage.thought, memoryProbe.assembledContext);
-                    await recordAssistantMemory(aiResult.finalResponse, ws.id, turnId, userAtom.id, 'text');
+                    await recordAssistantMemory(aiResult.finalResponse, memoryProbe.workspaceId, ws.id, turnId, userAtom.id, 'text');
 
                     const latencyMs = (performance.now() - start).toFixed(2);
 
                     ws.send({
                         status: 'thought_processed',
+                        workspaceId: memoryProbe.workspaceId,
                         response: aiResult.finalResponse,
                         modelOutputs: {
                             qwen: aiResult.qwenOutput,
@@ -127,6 +270,7 @@ const app = new Elysia()
                         memoryActive: memoryProbe.citations.length > 0,
                         context: memoryProbe.assembledContext,
                         memoryCitations: memoryProbe.citations,
+                        evidenceGroups: memoryProbe.evidenceGroups,
                         memoryMode: memoryProbe.memoryMode,
                         branchWarnings: memoryProbe.branchWarnings,
                         latencyMs,
@@ -141,6 +285,7 @@ const app = new Elysia()
                 if (parsedMessage.source !== 'acoustic-uplink') {
                     ws.send({
                         status: 'processed',
+                        workspaceId,
                         samples: interference.length,
                         vector: interference,
                         timestamp: Date.now()
@@ -160,17 +305,20 @@ const app = new Elysia()
                 try {
                     const turnId = crypto.randomUUID();
                     const acousticSummary = summarizeAcousticWave(parsedMessage.waveA, interference);
-                    const memoryProbe = await probeMemory(acousticSummary.prompt, interference);
+                    const memoryProbe = await probeMemory(acousticSummary.prompt, interference, { workspaceId });
 
                     const userAtom = await recordInteraction({
                         contentText: acousticSummary.memoryText,
                         waveSignature: interference,
                         sourceKind: 'user',
                         modality: 'acoustic_summary',
+                        workspaceId,
                         sessionId: ws.id,
                         turnId,
                         salience: 0.6,
                         confidence: 0.48,
+                        sourceType: 'acoustic',
+                        sourceTitle: 'Acoustic Uplink',
                         rawPayload: {
                             source: 'acoustic-uplink',
                             waveA: parsedMessage.waveA,
@@ -179,12 +327,13 @@ const app = new Elysia()
                     });
 
                     const aiResult = await processWaveThought(acousticSummary.prompt, memoryProbe.assembledContext);
-                    await recordAssistantMemory(aiResult.finalResponse, ws.id, turnId, userAtom.id, 'acoustic-uplink');
+                    await recordAssistantMemory(aiResult.finalResponse, memoryProbe.workspaceId, ws.id, turnId, userAtom.id, 'acoustic-uplink');
 
                     const latencyMs = (performance.now() - start).toFixed(2);
 
                     ws.send({
                         status: 'thought_processed',
+                        workspaceId: memoryProbe.workspaceId,
                         response: aiResult.finalResponse,
                         modelOutputs: {
                             qwen: aiResult.qwenOutput,
@@ -195,6 +344,7 @@ const app = new Elysia()
                         memoryActive: memoryProbe.citations.length > 0,
                         context: memoryProbe.assembledContext,
                         memoryCitations: memoryProbe.citations,
+                        evidenceGroups: memoryProbe.evidenceGroups,
                         memoryMode: memoryProbe.memoryMode,
                         branchWarnings: memoryProbe.branchWarnings,
                         inputMode: 'acoustic-uplink',
@@ -206,22 +356,27 @@ const app = new Elysia()
                 }
             } catch (err: unknown) {
                 const errorMessage = err instanceof Error ? err.message : String(err);
-                console.error('Wave processing error:', errorMessage);
-                ws.send({ status: 'error', message: `Wave collapse: ${errorMessage}` });
+                console.error('Memory stream error:', errorMessage);
+                ws.send({ status: 'error', message: `Memory stream error: ${errorMessage}` });
             }
         }
-    })
-    .listen(3000);
+    });
 
-process.on('SIGINT', () => {
-    console.log('\nVirtual Crystal powering down.');
-    for (const ws of activeConnections) {
-        ws.close();
-    }
-    setTimeout(() => process.exit(0), 500);
-});
+let server: ReturnType<typeof app.listen> | null = null;
 
-console.log(`\nVirtual Crystal WebSocket server is running at localhost:3000`);
-console.log('Endpoint: ws://localhost:3000/stream');
+if (import.meta.main) {
+    server = app.listen(PORT);
 
-export { app };
+    process.on('SIGINT', () => {
+        console.log('\nChronicle Memory powering down.');
+        for (const ws of activeConnections) {
+            ws.close();
+        }
+        setTimeout(() => process.exit(0), 500);
+    });
+
+    console.log(`\nChronicle Memory server is running at http://localhost:${PORT}`);
+    console.log(`Stream endpoint: ws://localhost:${PORT}/stream`);
+}
+
+export { app, server };

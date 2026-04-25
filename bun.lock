@@ -5,7 +5,6 @@
     "": {
       "name": "ai-research",
       "dependencies": {
-        "@elysiajs/static": "^1.4.10",
         "elysia": "^1.4.28",
         "node-llama-cpp": "^3.18.1",
       },
@@ -17,8 +16,6 @@
   },
   "packages": {
     "@borewit/text-codec": ["@borewit/text-codec@0.2.2", "", {}, "sha512-DDaRehssg1aNrH4+2hnj1B7vnUGEjU6OIlyRdkMd0aUdIUvKXrJfXsy8LVtXAy7DRvYVluWbMspsRhz2lcW0mQ=="],
-
-    "@elysiajs/static": ["@elysiajs/static@1.4.10", "", { "peerDependencies": { "elysia": ">= 1.4.0" } }, "sha512-BN/3PZVWjqkL/6TM7RH69Pae89CfU0OqfEYPeBp2hB/GR5Euds39Wy+0ug9Vbvu++GG4tRRANf2QjaLnriJveg=="],
 
     "@huggingface/jinja": ["@huggingface/jinja@0.5.8", "", {}, "sha512-ZdElB7DPS7QQS8ZnFc5RPPtkg+eN11z8AmIZWAyes6pSbwXqiFB/POVevvm01begdSX1ho9Gxln/F6qlQMsuaA=="],
 

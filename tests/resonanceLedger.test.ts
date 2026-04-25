@@ -38,6 +38,13 @@ describe('resonance ledger compatibility', () => {
         expect(calculateSector(first)).toBeLessThanOrEqual(10);
     });
 
+    test('penalizes shared prefixes when vectors differ in length', () => {
+        const shortVector = vectorFor('remember project alpha');
+        const longVector = vectorFor('remember project alpha with a very different suffix');
+
+        expect(cosineSimilarity(shortVector, longVector)).toBeLessThan(1);
+    });
+
     test('stores thought waves in the memory brain and recalls evidence-backed context', async () => {
         const brainPath = testBrainPath('compat');
         const ledgerPath = testBrainPath('compat-legacy');
