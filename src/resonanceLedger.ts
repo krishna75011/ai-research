@@ -1,17 +1,16 @@
 import { createReadStream, existsSync } from 'node:fs';
-import { appendFile, copyFile, mkdir, rename, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import * as readline from 'node:readline';
+import type { WaveUnit } from './virtualCrystal';
+
+export type { WaveUnit };
 
 const LEGACY_LEDGER_PATH = 'matrix.crystal';
 const DEFAULT_LEDGER_PATH = path.join('logs', 'matrix.crystal');
 const RECALL_THRESHOLD = 0.72;
+const MAX_LEDGER_RECORDS = 500;
 const SYNTHESIS_LABELS = ['Alpha', 'Beta'] as const;
-
-export interface WaveUnit {
-    re: number;
-    im: number;
-}
 
 export interface ResonanceRecord {
     text: string;
@@ -22,6 +21,7 @@ export interface ResonanceRecord {
 
 export interface LedgerOptions {
     ledgerPath?: string;
+    maxRecords?: number;
 }
 
 type LedgerLine =
@@ -209,18 +209,37 @@ export function cosineSimilarity(vecA: WaveUnit[], vecB: WaveUnit[]): number {
  */
 export async function saveThoughtWave(text: string, vector: WaveUnit[], options: LedgerOptions = {}) {
     const ledgerPath = getLedgerPath(options);
+    const maxRecords = options.maxRecords ?? MAX_LEDGER_RECORDS;
 
     return withLedgerLock(async () => {
         await ensureLedgerReady(ledgerPath, options.ledgerPath === undefined && process.env.MATRIX_LEDGER_PATH === undefined && process.env.LEDGER_PATH === undefined);
 
+        const rows = await readLedgerLines(ledgerPath);
         const record: ResonanceRecord = {
             text,
             vector,
             sector: calculateSector(vector),
             amplitude: 1
         };
+        const serialized = JSON.stringify(record);
+        const duplicate = rows.findIndex(row => row.record?.text === text);
 
-        await appendFile(ledgerPath, `${JSON.stringify(record)}\n`);
+        if (duplicate !== -1) {
+            rows[duplicate] = { raw: serialized, record };
+        } else {
+            rows.push({ raw: serialized, record });
+        }
+
+        let lines = rows.map(r => r.raw);
+        if (rows.length > maxRecords) {
+            const kept = rows
+                .filter(r => r.record !== null)
+                .sort((a, b) => b.record!.amplitude - a.record!.amplitude)
+                .slice(0, maxRecords);
+            lines = kept.map(r => r.raw);
+        }
+
+        await rewriteLedger(ledgerPath, lines);
     });
 }
 

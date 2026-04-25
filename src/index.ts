@@ -18,6 +18,7 @@ if (!existsSync('logs')) {
 const clientThrottles = new Map<string, number>();
 const clientAcousticThrottles = new Map<string, number>();
 const activeAcousticClients = new Set<string>();
+const activeConnections = new Set<{ close(): void }>();
 
 const app = new Elysia()
     .use(staticPlugin())
@@ -35,9 +36,11 @@ const app = new Elysia()
     .get('/favicon.ico', () => Bun.file('public/favicon.ico'))
     .ws('/stream', {
         open(ws) {
+            activeConnections.add(ws);
             console.log('Client connected to Virtual Crystal Stream');
         },
         close(ws) {
+            activeConnections.delete(ws);
             clientThrottles.delete(ws.id);
             clientAcousticThrottles.delete(ws.id);
             activeAcousticClients.delete(ws.id);
@@ -64,7 +67,7 @@ const app = new Elysia()
                     console.log(`\nProcessing thought: "${parsedMessage.thought.substring(0, 50)}..."`);
 
                     const waveA = textToWave(parsedMessage.thought);
-                    const waveB = Array.from({ length: waveA.length }, () => 0);
+                    const waveB = waveA.map(phase => (phase + Math.PI / 2) % (Math.PI * 2));
                     const holographicVector = simulateInterference(waveA, waveB);
 
                     const synthesizedMemoryContext = await recallResonance(holographicVector);
@@ -145,14 +148,18 @@ const app = new Elysia()
     })
     .listen(3000);
 
+const entropyInterval = setInterval(triggerEntropy, 24 * 60 * 60 * 1000);
+
 process.on('SIGINT', () => {
-    console.log('\nVirtual Crystal powering down. Saving state...');
-    process.exit(0);
+    console.log('\nVirtual Crystal powering down.');
+    clearInterval(entropyInterval);
+    for (const ws of activeConnections) {
+        ws.close();
+    }
+    setTimeout(() => process.exit(0), 500);
 });
 
 console.log(`\nVirtual Crystal WebSocket server is running at localhost:3000`);
 console.log('Endpoint: ws://localhost:3000/stream');
-
-setInterval(triggerEntropy, 24 * 60 * 60 * 1000);
 
 export { app };

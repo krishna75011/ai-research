@@ -6,7 +6,11 @@ export type StreamMessage =
     | { kind: 'wave'; waveA: number[]; waveB: number[]; source?: string };
 
 export function sanitizeThought(value: string): string {
-    return value.trim().slice(0, MAX_THOUGHT_LENGTH).replace(/[<>]/g, '');
+    return value
+        .trim()
+        .slice(0, MAX_THOUGHT_LENGTH)
+        .replace(/[<>]/g, '')
+        .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -52,7 +56,7 @@ export function parseStreamMessage(message: unknown): StreamMessage | null {
             return waveB ? { kind: 'wave', waveA, waveB, source } : null;
         }
 
-        const waveB = Array.from({ length: waveA.length }, () => 0);
+        const waveB = waveA.map(phase => (phase + Math.PI / 2) % (Math.PI * 2));
         return { kind: 'wave', waveA, waveB, source };
     }
 

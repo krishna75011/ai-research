@@ -76,8 +76,7 @@ async function ensureResources(): Promise<BrainResources> {
 function createSession(context: LlamaContext, systemPrompt: string): LlamaChatSession {
     return new LlamaChatSession({
         contextSequence: context.getSequence(),
-        systemPrompt,
-        autoDisposeSequence: true
+        systemPrompt
     });
 }
 

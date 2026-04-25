@@ -9,6 +9,18 @@ describe('wave modulation', () => {
         expect(wave[0]).toBeCloseTo((65 / 255) * Math.PI * 2);
     });
 
+    test('handles Unicode characters without exceeding the phase range', () => {
+        const wave = textToWave('Hello \u00e9\u4e16\ud83d\ude00');
+        // Each character produces one phase value (for...of iterates code points, not code units)
+        expect(wave).toHaveLength(9);
+        for (const phase of wave) {
+            expect(phase).toBeGreaterThanOrEqual(0);
+            expect(phase).toBeLessThanOrEqual(Math.PI * 2);
+        }
+        // ASCII 'H' should still match the original formula
+        expect(wave[0]).toBeCloseTo((72 / 255) * Math.PI * 2);
+    });
+
     test('simulates complex interference over the shared wave length', () => {
         const result = simulateInterference([0, Math.PI / 2], [Math.PI, 0, Math.PI]);
 

@@ -1,4 +1,4 @@
-export interface Complex {
+export interface WaveUnit {
     re: number;
     im: number;
 }
@@ -14,9 +14,9 @@ export interface Complex {
  * @param waveB - Second numerical array representing wave frequencies/phases
  * @returns An array of complex numbers representing the resulting interference pattern
  */
-export function simulateInterference(waveA: number[], waveB: number[]): Complex[] {
+export function simulateInterference(waveA: number[], waveB: number[]): WaveUnit[] {
     const length = Math.min(waveA.length, waveB.length);
-    const result: Complex[] = new Array(length);
+    const result: WaveUnit[] = new Array(length);
 
     for (let i = 0; i < length; i++) {
         const valA = waveA[i]!;

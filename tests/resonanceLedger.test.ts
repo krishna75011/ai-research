@@ -98,6 +98,38 @@ describe('resonance ledger', () => {
         expect(updatedRecords.find((record) => record.text === 'unrelated memory')?.amplitude).toBe(0.6);
     });
 
+    test('deduplicates identical thoughts instead of creating multiple entries', async () => {
+        const ledgerPath = testLedgerPath('dedup');
+        const vector = vectorFor('repeated idea');
+
+        await saveThoughtWave('repeated idea', vector, { ledgerPath });
+        await saveThoughtWave('repeated idea', vector, { ledgerPath });
+        await saveThoughtWave('repeated idea', vector, { ledgerPath });
+
+        const lines = (await readFile(ledgerPath, 'utf8')).trim().split('\n');
+        expect(lines).toHaveLength(1);
+
+        const record = JSON.parse(lines[0]!) as { text: string; amplitude: number };
+        expect(record.text).toBe('repeated idea');
+        expect(record.amplitude).toBe(1);
+    });
+
+    test('enforces maximum record count by evicting lowest-amplitude entries', async () => {
+        const ledgerPath = testLedgerPath('cap');
+        await mkdir(path.dirname(ledgerPath), { recursive: true });
+
+        const maxRecords = 3;
+
+        for (let i = 0; i < 5; i++) {
+            const text = `thought-${i}`;
+            const vector = vectorFor(text);
+            await saveThoughtWave(text, vector, { ledgerPath, maxRecords });
+        }
+
+        const lines = (await readFile(ledgerPath, 'utf8')).trim().split('\n');
+        expect(lines.length).toBeLessThanOrEqual(maxRecords);
+    });
+
     test('entropy removes exhausted records', async () => {
         const ledgerPath = testLedgerPath('entropy');
         await mkdir(path.dirname(ledgerPath), { recursive: true });

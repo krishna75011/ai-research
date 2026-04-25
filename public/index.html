@@ -570,8 +570,11 @@
 
         // WebSocket
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const ws = new WebSocket(`${wsProtocol}//${window.location.host}/stream`);
+        let ws = null;
         let socketReady = false;
+        let reconnectTimer = null;
+        let reconnectAttempts = 0;
+        const MAX_RECONNECT_DELAY = 30000;
         btn.disabled = true;
         micBtn.disabled = true;
 
@@ -609,73 +612,102 @@
             if (event.key === 'Enter') submitThought();
         });
 
-        ws.onopen = () => {
-            socketReady = true;
-            btn.disabled = false;
-            micBtn.disabled = false;
-            setSystemStatus('Dual-Brain: Active');
-        };
-
-        ws.onclose = () => {
-            socketReady = false;
-            btn.disabled = true;
-            micBtn.disabled = true;
-            if (microphoneEnabled) stopAcousticUplink();
-            setSystemStatus('Stream: Offline');
-        };
-
-        ws.onerror = () => {
-            socketReady = false;
-            btn.disabled = true;
-            micBtn.disabled = true;
-            if (microphoneEnabled) stopAcousticUplink();
-            setSystemStatus('Stream: Error');
-        };
-
-        ws.onmessage = (msg) => {
-            const data = JSON.parse(msg.data);
-            if (data.status === 'thought_processed') {
-                if (data.inputMode === 'acoustic-uplink') {
-                    acousticRequestPending = false;
-                    setSystemStatus(microphoneEnabled ? 'Acoustic Uplink' : 'Dual-Brain: Active');
-                }
-
-                responseText.innerText = data.response;
-                
-                if (data.memoryActive) {
-                    memoryBadge.style.display = 'block';
-                    memoryContext.innerText = data.context.substring(0, 100) + '...';
-                } else {
-                    memoryBadge.style.display = 'none';
-                }
-
-                // Update Metabolism
-                statLatency.innerText = data.latencyMs ? data.latencyMs + ' ms' : '-- ms';
-                totalPeaks += 1;
-                statPeaks.innerText = totalPeaks;
-
-                overlay.style.display = 'block';
-                draw3D(data.vector);
-                playHolographicChord(data.vector);
-            } else if (data.status === 'error') {
-                acousticRequestPending = false;
-                if (microphoneEnabled) {
-                    setSystemStatus('Acoustic Uplink');
-                }
-                responseText.innerText = data.message;
-                memoryBadge.style.display = 'none';
-                overlay.style.display = 'block';
-                statLatency.innerText = '-- ms';
-            } else if (data.status === 'processed') {
-                statLatency.innerText = data.samples ? `${data.samples} acoustic bins` : '-- ms';
-                totalPeaks += 1;
-                statPeaks.innerText = totalPeaks;
-
-                if (data.vector) {
-                    draw3D(data.vector);
-                }
+        function connectWebSocket() {
+            if (reconnectTimer) {
+                clearTimeout(reconnectTimer);
+                reconnectTimer = null;
             }
-        };
+
+            ws = new WebSocket(`${wsProtocol}//${window.location.host}/stream`);
+
+            ws.onopen = () => {
+                socketReady = true;
+                reconnectAttempts = 0;
+                btn.disabled = false;
+                micBtn.disabled = false;
+                setSystemStatus('Dual-Brain: Active');
+            };
+
+            ws.onclose = () => {
+                socketReady = false;
+                btn.disabled = true;
+                micBtn.disabled = true;
+                if (microphoneEnabled) stopAcousticUplink();
+                scheduleReconnect();
+            };
+
+            ws.onerror = () => {
+                socketReady = false;
+                btn.disabled = true;
+                micBtn.disabled = true;
+                if (microphoneEnabled) stopAcousticUplink();
+            };
+
+            ws.onmessage = (msg) => {
+                let data;
+                try {
+                    data = JSON.parse(msg.data);
+                } catch {
+                    console.error('Failed to parse server message');
+                    return;
+                }
+
+                if (data.status === 'thought_processed') {
+                    if (data.inputMode === 'acoustic-uplink') {
+                        acousticRequestPending = false;
+                        setSystemStatus(microphoneEnabled ? 'Acoustic Uplink' : 'Dual-Brain: Active');
+                    }
+
+                    responseText.innerText = data.response;
+
+                    if (data.memoryActive) {
+                        memoryBadge.style.display = 'block';
+                        memoryContext.innerText = data.context.substring(0, 100) + '...';
+                    } else {
+                        memoryBadge.style.display = 'none';
+                    }
+
+                    statLatency.innerText = data.latencyMs ? data.latencyMs + ' ms' : '-- ms';
+                    totalPeaks += 1;
+                    statPeaks.innerText = totalPeaks;
+
+                    overlay.style.display = 'block';
+                    draw3D(data.vector);
+                    playHolographicChord(data.vector);
+                } else if (data.status === 'error') {
+                    acousticRequestPending = false;
+                    if (microphoneEnabled) {
+                        setSystemStatus('Acoustic Uplink');
+                    }
+                    responseText.innerText = data.message;
+                    memoryBadge.style.display = 'none';
+                    overlay.style.display = 'block';
+                    statLatency.innerText = '-- ms';
+                } else if (data.status === 'processed') {
+                    statLatency.innerText = data.samples ? `${data.samples} acoustic bins` : '-- ms';
+                    totalPeaks += 1;
+                    statPeaks.innerText = totalPeaks;
+
+                    if (data.vector) {
+                        draw3D(data.vector);
+                    }
+                }
+            };
+        }
+
+        function scheduleReconnect() {
+            if (reconnectTimer) return;
+            const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), MAX_RECONNECT_DELAY);
+            reconnectAttempts++;
+            setSystemStatus(`Reconnecting in ${Math.ceil(delay / 1000)}s...`);
+            reconnectTimer = setTimeout(() => {
+                reconnectTimer = null;
+                setSystemStatus('Reconnecting...');
+                connectWebSocket();
+            }, delay);
+        }
+
+        connectWebSocket();
 
         function playHolographicChord(vector) {
             if (!audioEnabled || !audioCtx) return;

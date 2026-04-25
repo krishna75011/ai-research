@@ -5,6 +5,8 @@ describe('stream protocol', () => {
     test('sanitizes thought input', () => {
         expect(sanitizeThought('  <hello>  ')).toBe('hello');
         expect(sanitizeThought('x'.repeat(1100))).toHaveLength(1000);
+        expect(sanitizeThought('test\x00\x07\x1F')).toBe('test');
+        expect(sanitizeThought('tab\there\nok')).toBe('tab\there\nok');
     });
 
     test('parses serialized thought messages', () => {
@@ -22,13 +24,16 @@ describe('stream protocol', () => {
         });
     });
 
-    test('accepts acoustic waveA-only messages by synthesizing a zero waveB', () => {
-        expect(parseStreamMessage({ waveA: [0.25, 0.5], source: 'acoustic-uplink' })).toEqual({
-            kind: 'wave',
-            waveA: [0.25, 0.5],
-            waveB: [0, 0],
-            source: 'acoustic-uplink'
-        });
+    test('accepts waveA-only messages by synthesizing a quadrature waveB', () => {
+        const result = parseStreamMessage({ waveA: [0.25, 0.5], source: 'acoustic-uplink' });
+        expect(result).not.toBeNull();
+        expect(result!.kind).toBe('wave');
+        if (result!.kind === 'wave') {
+            expect(result!.waveA).toEqual([0.25, 0.5]);
+            expect(result!.waveB[0]).toBeCloseTo(0.25 + Math.PI / 2);
+            expect(result!.waveB[1]).toBeCloseTo(0.5 + Math.PI / 2);
+            expect(result!.source).toBe('acoustic-uplink');
+        }
     });
 
     test('rejects malformed payloads', () => {
