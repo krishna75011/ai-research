@@ -4,8 +4,10 @@ import path from 'node:path';
 import {
     containsOrchestrationArtifact,
     createWorkspace,
+    exportWorkspace,
     getWorkspaceSnapshot,
     importFilesToMemory,
+    importWorkspaceData,
     probeMemory,
     recordInteraction,
     updateMemoryFeedback,
@@ -142,6 +144,34 @@ const app = new Elysia()
             snapshot: await getWorkspaceSnapshot({ workspaceId })
         };
     })
+    .get('/api/workspaces/:id/export', async ({ params, set }) => {
+        try {
+            const data = await exportWorkspace(params.id);
+            set.headers['Content-Disposition'] = `attachment; filename="workspace-${params.id}.json"`;
+            set.headers['Content-Type'] = 'application/json';
+            return data;
+        } catch (err) {
+            set.status = 404;
+            return { status: 'error', message: 'Workspace not found or export failed.' };
+        }
+    })
+    .post('/api/workspaces/import', async ({ body, set }) => {
+        if (!isRecord(body) || !body.exportData) {
+            set.status = 400;
+            return { status: 'error', message: 'Missing exportData.' };
+        }
+        try {
+            const workspace = await importWorkspaceData(body.exportData);
+            return {
+                status: 'ok',
+                workspace,
+                snapshot: await getWorkspaceSnapshot({ workspaceId: workspace.id })
+            };
+        } catch (err) {
+            set.status = 500;
+            return { status: 'error', message: err instanceof Error ? err.message : String(err) };
+        }
+    })
     .post('/api/workspaces', async ({ body, set }) => {
         if (!isRecord(body) || typeof body.name !== 'string' || !body.name.trim()) {
             set.status = 400;
@@ -244,7 +274,14 @@ const app = new Elysia()
                         }
                     });
 
-                    const aiResult = await processWaveThought(parsedMessage.thought, memoryProbe.assembledContext);
+                    const aiResult = await processWaveThought(parsedMessage.thought, memoryProbe.assembledContext, true, (token) => {
+                        ws.send({
+                            status: 'thought_stream',
+                            workspaceId: memoryProbe.workspaceId,
+                            chunk: token,
+                            timestamp: Date.now()
+                        });
+                    });
                     await recordAssistantMemory(aiResult.finalResponse, memoryProbe.workspaceId, ws.id, turnId, userAtom.id);
 
                     const latencyMs = (performance.now() - start).toFixed(2);

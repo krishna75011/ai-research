@@ -1172,7 +1172,7 @@ function ensureLegacyImported(db: Database, options: MemoryBrainOptions = {}) {
     }
 }
 
-function rankAtoms(atoms: MemoryAtom[], queryText: string, queryWaveSignature: WaveUnit[]): Array<{ atom: MemoryAtom; score: number }> {
+function rankAtoms(atoms: MemoryAtom[], queryText: string, queryWaveSignature: WaveUnit[], queryEmbedding: number[]): Array<{ atom: MemoryAtom; score: number }> {
     const queryTokens = tokenize(queryText);
     const queryEntities = extractEntityKeys(queryText);
     const timeAnchor = inferTimeAnchor(queryText);
@@ -1193,7 +1193,13 @@ function rankAtoms(atoms: MemoryAtom[], queryText: string, queryWaveSignature: W
                     ? atom.sourceType === 'file' ? 0.12 : atom.sourceType === 'conversation' ? -0.04 : 0
                     : 0;
             const assistantPenalty = atom.sourceKind === 'assistant' ? -0.03 : 0;
-            const score = lexical * 0.32 + entity * 0.18 + wave * 0.25 + time * 0.08 + pinned * 0.1 + atom.salience * 0.05 + sourceBoost + intentBoost + assistantPenalty;
+
+            const atomEmbedding = atom.embeddingJson ? parseNumberArray(atom.embeddingJson) : [];
+            const semantic = atomEmbedding.length > 0 && queryEmbedding.length > 0 
+                ? calculateEmbeddingSimilarity(queryEmbedding, atomEmbedding) 
+                : 0;
+
+            const score = lexical * 0.24 + entity * 0.14 + wave * 0.10 + semantic * 0.30 + time * 0.06 + pinned * 0.1 + atom.salience * 0.06 + sourceBoost + intentBoost + assistantPenalty;
 
             return { atom, score };
         })
@@ -1590,12 +1596,32 @@ export async function updateMemoryFeedback(atomId: number, action: MemoryFeedbac
 export async function probeMemory(queryText: string, queryWaveSignature: WaveUnit[], options: MemoryBrainOptions = {}): Promise<ProbeResult> {
     const db = prepareDatabase(options);
     const workspaceId = resolveWorkspaceId(db, options.workspaceId);
-    const atomRows = db.query(`
-        SELECT * FROM memory_atoms
-        WHERE workspace_id = ?
-          AND recall_state = 'active'
-        ORDER BY id ASC
-    `).all(workspaceId) as AtomRow[];
+    const queryEmbedding = await computeEmbedding(queryText);
+    let topAtoms: Array<{ atom: MemoryAtom; score: number }> = [];
+    const PAGE_SIZE = 1500;
+    let lastId = 0;
+
+    while (true) {
+        const atomRows = db.query(`
+            SELECT * FROM memory_atoms
+            WHERE workspace_id = ?
+              AND recall_state = 'active'
+              AND id > ?
+            ORDER BY id ASC
+            LIMIT ?
+        `).all(workspaceId, lastId, PAGE_SIZE) as AtomRow[];
+
+        if (atomRows.length === 0) break;
+
+        const atoms = atomRows.map(mapAtom);
+        const ranked = rankAtoms(atoms, queryText, queryWaveSignature, queryEmbedding);
+
+        topAtoms = [...topAtoms, ...ranked]
+            .sort((left, right) => right.score - left.score)
+            .slice(0, 16);
+
+        lastId = atomRows[atomRows.length - 1]!.id;
+    }
     const standingWaveRows = db.query(`
         SELECT * FROM standing_waves
         WHERE workspace_id = ?
@@ -1607,11 +1633,10 @@ export async function probeMemory(queryText: string, queryWaveSignature: WaveUni
         ORDER BY id ASC
     `).all(workspaceId) as EvidenceBranchRow[];
 
-    const atoms = atomRows.map(mapAtom);
     const standingWaves = standingWaveRows.map(mapStandingWave);
     const branches = branchRows.map(mapEvidenceBranch);
 
-    const topAtoms = rankAtoms(atoms, queryText, queryWaveSignature).slice(0, 4);
+    topAtoms = topAtoms.slice(0, 4);
     const topStandingWaves = rankStandingWaves(standingWaves, queryText).slice(0, 3);
     const topBranches = rankBranches(branches, queryText).slice(0, 4);
 
@@ -1768,4 +1793,130 @@ export async function getEvidenceBranches(options: MemoryBrainOptions = {}): Pro
         ORDER BY id ASC
     `).all(...(workspaceId ? [workspaceId] : [])) as EvidenceBranchRow[];
     return rows.map(mapEvidenceBranch);
+}
+
+export async function exportWorkspace(workspaceIdToExport: string, options: MemoryBrainOptions = {}): Promise<any> {
+    const db = prepareDatabase(options);
+    const workspaceId = resolveWorkspaceId(db, workspaceIdToExport);
+    
+    const workspace = db.query('SELECT * FROM workspaces WHERE id = ?').get(workspaceId) as WorkspaceRow;
+    const atoms = db.query('SELECT * FROM memory_atoms WHERE workspace_id = ? ORDER BY id ASC').all(workspaceId) as AtomRow[];
+    const waves = db.query('SELECT * FROM standing_waves WHERE workspace_id = ? ORDER BY id ASC').all(workspaceId) as StandingWaveRow[];
+    const branches = db.query('SELECT * FROM evidence_branches WHERE workspace_id = ? ORDER BY id ASC').all(workspaceId) as EvidenceBranchRow[];
+    
+    return {
+        version: 1,
+        mode: MEMORY_MODE,
+        workspace,
+        atoms,
+        waves,
+        branches
+    };
+}
+
+export async function importWorkspaceData(exportData: any, options: MemoryBrainOptions = {}): Promise<Workspace> {
+    const db = prepareDatabase(options);
+    
+    if (!exportData || exportData.version !== 1 || !exportData.workspace) {
+        throw new Error('Invalid workspace export data format');
+    }
+    
+    const newWorkspaceName = exportData.workspace.name + ' (Imported)';
+    const newWorkspace = await createWorkspace(newWorkspaceName, options);
+    const newWorkspaceId = newWorkspace.id;
+    
+    db.transaction(() => {
+        const atomIdMap = new Map<number, number>();
+
+        const insertAtom = db.prepare(`
+            INSERT INTO memory_atoms (
+                workspace_id, session_id, turn_id, parent_atom_id, content_text, wave_json, embedding_json,
+                topic_key, entity_keys_json, salience, confidence, recall_state, correction_state, source_kind,
+                modality, source_type, source_title, source_uri, source_hash, chunk_index, is_pinned,
+                raw_payload_json, created_at, updated_at
+            ) VALUES (
+                $workspace_id, $session_id, $turn_id, $parent_atom_id, $content_text, $wave_json, $embedding_json,
+                $topic_key, $entity_keys_json, $salience, $confidence, $recall_state, $correction_state, $source_kind,
+                $modality, $source_type, $source_title, $source_uri, $source_hash, $chunk_index, $is_pinned,
+                $raw_payload_json, $created_at, $updated_at
+            ) RETURNING id
+        `);
+        
+        for (const atom of exportData.atoms) {
+            const result = insertAtom.get({
+                $workspace_id: newWorkspaceId,
+                $session_id: atom.session_id,
+                $turn_id: atom.turn_id,
+                $parent_atom_id: atom.parent_atom_id ? (atomIdMap.get(atom.parent_atom_id) ?? null) : null,
+                $content_text: atom.content_text,
+                $wave_json: atom.wave_json,
+                $embedding_json: atom.embedding_json,
+                $topic_key: atom.topic_key,
+                $entity_keys_json: atom.entity_keys_json,
+                $salience: atom.salience,
+                $confidence: atom.confidence,
+                $recall_state: atom.recall_state,
+                $correction_state: atom.correction_state,
+                $source_kind: atom.source_kind,
+                $modality: atom.modality,
+                $source_type: atom.source_type,
+                $source_title: atom.source_title,
+                $source_uri: atom.source_uri,
+                $source_hash: atom.source_hash,
+                $chunk_index: atom.chunk_index,
+                $is_pinned: atom.is_pinned,
+                $raw_payload_json: atom.raw_payload_json,
+                $created_at: atom.created_at,
+                $updated_at: atom.updated_at
+            }) as { id: number };
+            
+            atomIdMap.set(atom.id, result.id);
+        }
+        
+        const insertWave = db.prepare(`
+            INSERT INTO standing_waves (
+                workspace_id, topic_key, canonical_text, wave_json,
+                support_count, is_locked, created_at, updated_at
+            ) VALUES (
+                $workspace_id, $topic_key, $canonical_text, $wave_json,
+                $support_count, $is_locked, $created_at, $updated_at
+            )
+        `);
+        
+        for (const wave of exportData.waves) {
+            insertWave.run({
+                $workspace_id: newWorkspaceId,
+                $topic_key: wave.topic_key,
+                $canonical_text: wave.canonical_text,
+                $wave_json: wave.wave_json,
+                $support_count: wave.support_count,
+                $is_locked: wave.is_locked,
+                $created_at: wave.created_at,
+                $updated_at: wave.updated_at
+            });
+        }
+        
+        const insertBranch = db.prepare(`
+            INSERT INTO evidence_branches (
+                workspace_id, topic_key, preference_claim,
+                support_atom_id, created_at, updated_at
+            ) VALUES (
+                $workspace_id, $topic_key, $preference_claim,
+                $support_atom_id, $created_at, $updated_at
+            )
+        `);
+        
+        for (const branch of exportData.branches) {
+            insertBranch.run({
+                $workspace_id: newWorkspaceId,
+                $topic_key: branch.topic_key,
+                $preference_claim: branch.preference_claim,
+                $support_atom_id: branch.support_atom_id ? (atomIdMap.get(branch.support_atom_id) ?? null) : null,
+                $created_at: branch.created_at,
+                $updated_at: branch.updated_at
+            });
+        }
+    })();
+    
+    return newWorkspace;
 }

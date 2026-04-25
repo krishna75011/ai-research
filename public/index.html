@@ -511,6 +511,10 @@
                             <input id="workspace-name" type="text" placeholder="New workspace name">
                             <button class="ghost-button" type="submit">Create</button>
                         </form>
+                        <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+                            <button id="export-workspace-btn" class="ghost-button" type="button" style="flex: 1;">Export</button>
+                            <button id="import-workspace-btn" class="ghost-button" type="button" style="flex: 1;">Import</button>
+                        </div>
                     </div>
                 </section>
 
@@ -608,8 +612,15 @@
         </main>
     </div>
 
+    <div id="error-boundary" style="display: none; position: fixed; inset: 0; background: rgba(10, 13, 21, 0.98); z-index: 9999; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 2rem;">
+        <h1 style="color: #f87171; font-size: 2.2rem; margin: 0 0 1rem; font-weight: 600;">Chronicle Memory Crashed</h1>
+        <p style="color: var(--text-muted); font-size: 1.1rem; max-width: 540px; margin: 0 0 2rem; line-height: 1.6;" id="error-boundary-msg">An unexpected error occurred in the frontend application.</p>
+        <button class="header-button" onclick="window.location.reload()">Reload Application</button>
+    </div>
+
     <input id="file-input" class="hidden-input" type="file" multiple accept=".md,.txt,.json,.ts,.tsx,.js,.jsx,.py">
     <input id="folder-input" class="hidden-input" type="file" multiple webkitdirectory>
+    <input id="workspace-import-input" class="hidden-input" type="file" accept=".json">
 
     <script type="module">
         import * as THREE from 'three';
@@ -627,8 +638,21 @@
             audioEnabled: false,
             developerMode: false,
             lastLatency: '-- ms',
-            lastFeedbackAtomId: null
+            lastFeedbackAtomId: null,
+            isGenerating: false
         };
+
+        window.addEventListener('error', (event) => {
+            const boundary = document.getElementById('error-boundary');
+            document.getElementById('error-boundary-msg').textContent = event.error?.message || event.message;
+            boundary.style.display = 'flex';
+        });
+
+        window.addEventListener('unhandledrejection', (event) => {
+            const boundary = document.getElementById('error-boundary');
+            document.getElementById('error-boundary-msg').textContent = event.reason?.message || String(event.reason);
+            boundary.style.display = 'flex';
+        });
 
         const statusLabel = document.getElementById('app-status');
         const workspaceSelector = document.getElementById('workspace-selector');
@@ -650,6 +674,9 @@
         const importFolderBtn = document.getElementById('import-folder-btn');
         const fileInput = document.getElementById('file-input');
         const folderInput = document.getElementById('folder-input');
+        const workspaceImportInput = document.getElementById('workspace-import-input');
+        const exportWorkspaceBtn = document.getElementById('export-workspace-btn');
+        const importWorkspaceBtn = document.getElementById('import-workspace-btn');
         const soundBtn = document.getElementById('sound-btn');
         const developerToggle = document.getElementById('developer-toggle');
         const diagnosticsPanel = document.getElementById('diagnostics-panel');
@@ -1140,18 +1167,59 @@
                     }
                     await refreshSnapshot(data.workspaceId || state.currentWorkspaceId);
                     setComposerStatus('Memory response ready.');
+                    
+                    state.isGenerating = false;
+                    sendBtn.disabled = false;
+                    input.disabled = false;
+                    input.focus();
+                    return;
+                }
+
+                if (data.status === 'thought_stream') {
+                    let tempMsg = document.getElementById('temp-stream-msg');
+                    if (!tempMsg) {
+                        tempMsg = document.createElement('div');
+                        tempMsg.id = 'temp-stream-msg';
+                        tempMsg.className = 'message assistant';
+                        
+                        const role = document.createElement('span');
+                        role.className = 'message-role';
+                        role.textContent = 'Assistant - streaming...';
+                        tempMsg.appendChild(role);
+
+                        const body = document.createElement('div');
+                        body.className = 'message-body';
+                        body.id = 'temp-stream-body';
+                        tempMsg.appendChild(body);
+
+                        messageList.appendChild(tempMsg);
+                        document.getElementById('empty-state').style.display = 'none';
+                    }
+                    const body = document.getElementById('temp-stream-body');
+                    body.textContent += data.chunk;
+                    
+                    const scroller = document.getElementById('message-scroller');
+                    scroller.scrollTop = scroller.scrollHeight;
                     return;
                 }
 
                 if (data.status === 'error') {
                     setComposerStatus(data.message || 'The memory engine returned an error.');
+                    state.isGenerating = false;
+                    sendBtn.disabled = false;
+                    input.disabled = false;
                 }
             };
         }
 
         function submitThought() {
             const thought = input.value.trim();
-            if (!thought || !state.socketReady) return;
+            if (!thought || !state.socketReady || state.isGenerating) return;
+            
+            state.isGenerating = true;
+            sendBtn.disabled = true;
+            input.disabled = true;
+            
             ws.send(JSON.stringify({
                 thought,
                 workspaceId: state.currentWorkspaceId
@@ -1199,6 +1267,39 @@
                 await importSelectedFiles(folderInput.files);
                 folderInput.value = '';
             }
+        });
+
+        exportWorkspaceBtn.addEventListener('click', () => {
+            window.open(`/api/workspaces/${encodeURIComponent(state.currentWorkspaceId)}/export`, '_blank');
+        });
+
+        importWorkspaceBtn.addEventListener('click', () => workspaceImportInput.click());
+        
+        workspaceImportInput.addEventListener('change', async () => {
+            if (!workspaceImportInput.files?.length) return;
+            const file = workspaceImportInput.files[0];
+            try {
+                const text = await file.text();
+                const exportData = JSON.parse(text);
+                
+                setComposerStatus('Importing workspace...');
+                const response = await fetch('/api/workspaces/import', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ exportData })
+                });
+                const data = await response.json();
+                
+                if (data.status !== 'ok') {
+                    setComposerStatus(data.message || 'Workspace import failed.');
+                } else {
+                    renderSnapshot(data.snapshot);
+                    setComposerStatus(`Workspace "${data.workspace.name}" imported successfully.`);
+                }
+            } catch (err) {
+                setComposerStatus('Failed to parse workspace export file.');
+            }
+            workspaceImportInput.value = '';
         });
 
         developerToggle.addEventListener('click', () => {

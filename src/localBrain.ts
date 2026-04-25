@@ -153,7 +153,12 @@ export function buildSystemPrompt(basePrompt: string, memoryContext?: string | n
     return `${basePrompt}\n\n${memoryContext}\nUse this retrieved memory evidence as context. Prefer cited recall over speculation, and preserve conflicts when branch warnings are present.`;
 }
 
-export async function processWaveThought(input: string, memoryContext?: string | null, useDualBrain = true): Promise<WaveThoughtResult> {
+export async function processWaveThought(
+    input: string,
+    memoryContext?: string | null,
+    useDualBrain = true,
+    onToken?: (token: string) => void
+): Promise<WaveThoughtResult> {
     return withInferenceLock(async () => {
         const { qwenContext, gemmaContext, systemPrompt } = await ensureResources();
         let qwenSession: LlamaChatSession | null = null;
@@ -168,7 +173,11 @@ export async function processWaveThought(input: string, memoryContext?: string |
             gemmaSession = createSession(gemmaContext, contextualSystemPrompt);
 
             if (!useDualBrain) {
-                const finalResponse = await gemmaSession.prompt(input);
+                const finalResponse = await gemmaSession.prompt(input, {
+                    onTextChunk(chunk) {
+                        onToken?.(chunk);
+                    }
+                });
                 return {
                     finalResponse,
                     qwenOutput: null,
@@ -205,7 +214,11 @@ export async function processWaveThought(input: string, memoryContext?: string |
                 'Return only the final user-facing reply.'
             ].join('\n');
 
-            const synthesizedResponse = await synthesisSession.prompt(mergePrompt);
+            const synthesizedResponse = await synthesisSession.prompt(mergePrompt, {
+                onTextChunk(chunk) {
+                    onToken?.(chunk);
+                }
+            });
             const finalResponse = selectUserFacingResponse(synthesizedResponse, qwenOutput, gemmaOutput);
             const duration = ((Date.now() - startTime) / 1000).toFixed(2);
             console.log(`Final response synthesized in ${duration}s`);
