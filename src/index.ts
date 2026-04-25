@@ -1,7 +1,6 @@
 import { Elysia } from 'elysia';
 import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
-import { summarizeAcousticWave } from './acousticWave';
 import {
     containsOrchestrationArtifact,
     createWorkspace,
@@ -20,7 +19,6 @@ import { parseStreamMessage } from './protocol';
 import { simulateInterference, type WaveUnit } from './virtualCrystal';
 
 const THOUGHT_THROTTLE_MS = 1500;
-const ACOUSTIC_THROTTLE_MS = 2500;
 const DEFAULT_PORT = 3000;
 
 if (!existsSync('logs')) {
@@ -33,8 +31,6 @@ const PORT = Number.isFinite(Number(process.env.PORT)) && Number(process.env.POR
     : DEFAULT_PORT;
 
 const clientThrottles = new Map<string, number>();
-const clientAcousticThrottles = new Map<string, number>();
-const activeAcousticClients = new Set<string>();
 const activeConnections = new Set<{ close(): void }>();
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -67,8 +63,7 @@ async function recordAssistantMemory(
     workspaceId: string,
     sessionId: string,
     turnId: string,
-    parentAtomId: number,
-    inputMode: 'text' | 'acoustic-uplink'
+    parentAtomId: number
 ) {
     if (containsOrchestrationArtifact(response)) {
         return;
@@ -88,7 +83,6 @@ async function recordAssistantMemory(
         sourceType: 'conversation',
         sourceTitle: 'Conversation',
         rawPayload: {
-            inputMode,
             response
         }
     });
@@ -207,8 +201,6 @@ const app = new Elysia()
         close(ws) {
             activeConnections.delete(ws);
             clientThrottles.delete(ws.id);
-            clientAcousticThrottles.delete(ws.id);
-            activeAcousticClients.delete(ws.id);
         },
         async message(ws, message: unknown) {
             const start = performance.now();
@@ -253,7 +245,7 @@ const app = new Elysia()
                     });
 
                     const aiResult = await processWaveThought(parsedMessage.thought, memoryProbe.assembledContext);
-                    await recordAssistantMemory(aiResult.finalResponse, memoryProbe.workspaceId, ws.id, turnId, userAtom.id, 'text');
+                    await recordAssistantMemory(aiResult.finalResponse, memoryProbe.workspaceId, ws.id, turnId, userAtom.id);
 
                     const latencyMs = (performance.now() - start).toFixed(2);
 
@@ -278,81 +270,6 @@ const app = new Elysia()
                     });
 
                     return;
-                }
-
-                const interference = simulateInterference(parsedMessage.waveA, parsedMessage.waveB);
-
-                if (parsedMessage.source !== 'acoustic-uplink') {
-                    ws.send({
-                        status: 'processed',
-                        workspaceId,
-                        samples: interference.length,
-                        vector: interference,
-                        timestamp: Date.now()
-                    });
-                    return;
-                }
-
-                const now = Date.now();
-                const lastAcousticThought = clientAcousticThrottles.get(ws.id) || 0;
-                if (activeAcousticClients.has(ws.id) || now - lastAcousticThought < ACOUSTIC_THROTTLE_MS) {
-                    return;
-                }
-
-                clientAcousticThrottles.set(ws.id, now);
-                activeAcousticClients.add(ws.id);
-
-                try {
-                    const turnId = crypto.randomUUID();
-                    const acousticSummary = summarizeAcousticWave(parsedMessage.waveA, interference);
-                    const memoryProbe = await probeMemory(acousticSummary.prompt, interference, { workspaceId });
-
-                    const userAtom = await recordInteraction({
-                        contentText: acousticSummary.memoryText,
-                        waveSignature: interference,
-                        sourceKind: 'user',
-                        modality: 'acoustic_summary',
-                        workspaceId,
-                        sessionId: ws.id,
-                        turnId,
-                        salience: 0.6,
-                        confidence: 0.48,
-                        sourceType: 'acoustic',
-                        sourceTitle: 'Acoustic Uplink',
-                        rawPayload: {
-                            source: 'acoustic-uplink',
-                            waveA: parsedMessage.waveA,
-                            summary: acousticSummary
-                        }
-                    });
-
-                    const aiResult = await processWaveThought(acousticSummary.prompt, memoryProbe.assembledContext);
-                    await recordAssistantMemory(aiResult.finalResponse, memoryProbe.workspaceId, ws.id, turnId, userAtom.id, 'acoustic-uplink');
-
-                    const latencyMs = (performance.now() - start).toFixed(2);
-
-                    ws.send({
-                        status: 'thought_processed',
-                        workspaceId: memoryProbe.workspaceId,
-                        response: aiResult.finalResponse,
-                        modelOutputs: {
-                            qwen: aiResult.qwenOutput,
-                            gemma: aiResult.gemmaOutput,
-                            final: aiResult.finalResponse
-                        },
-                        vector: interference,
-                        memoryActive: memoryProbe.citations.length > 0,
-                        context: memoryProbe.assembledContext,
-                        memoryCitations: memoryProbe.citations,
-                        evidenceGroups: memoryProbe.evidenceGroups,
-                        memoryMode: memoryProbe.memoryMode,
-                        branchWarnings: memoryProbe.branchWarnings,
-                        inputMode: 'acoustic-uplink',
-                        latencyMs,
-                        timestamp: Date.now()
-                    });
-                } finally {
-                    activeAcousticClients.delete(ws.id);
                 }
             } catch (err: unknown) {
                 const errorMessage = err instanceof Error ? err.message : String(err);

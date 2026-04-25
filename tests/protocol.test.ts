@@ -17,27 +17,6 @@ describe('stream protocol', () => {
         });
     });
 
-    test('parses numeric wave messages', () => {
-        expect(parseStreamMessage({ waveA: [0, 1], waveB: [2, 3], workspaceId: 'workspace-a' })).toEqual({
-            kind: 'wave',
-            waveA: [0, 1],
-            waveB: [2, 3],
-            workspaceId: 'workspace-a'
-        });
-    });
-
-    test('accepts waveA-only messages by synthesizing a quadrature waveB', () => {
-        const result = parseStreamMessage({ waveA: [0.25, 0.5], source: 'acoustic-uplink' });
-        expect(result).not.toBeNull();
-        expect(result!.kind).toBe('wave');
-        if (result!.kind === 'wave') {
-            expect(result!.waveA).toEqual([0.25, 0.5]);
-            expect(result!.waveB[0]).toBeCloseTo(0.25 + Math.PI / 2);
-            expect(result!.waveB[1]).toBeCloseTo(0.5 + Math.PI / 2);
-            expect(result!.source).toBe('acoustic-uplink');
-        }
-    });
-
     test('drops blank workspace ids', () => {
         expect(parseStreamMessage({ thought: 'hello', workspaceId: '   ' })).toEqual({
             kind: 'thought',
@@ -50,7 +29,6 @@ describe('stream protocol', () => {
         expect(parseStreamMessage('{')).toBeNull();
         expect(parseStreamMessage({ thought: '   ' })).toBeNull();
         expect(parseStreamMessage({ waveA: [0, Number.NaN], waveB: [1, 2] })).toBeNull();
-        expect(parseStreamMessage({ waveA: [0], waveB: ['1'] })).toBeNull();
-        expect(parseStreamMessage({ waveA: ['0'], waveB: [1] })).toBeNull();
+        expect(parseStreamMessage({ waveA: [0], source: 'acoustic-uplink' })).toBeNull();
     });
 });

@@ -331,11 +331,6 @@
             border: 1px solid rgba(255, 255, 255, 0.05);
         }
 
-        .message.acoustic {
-            background: rgba(56, 212, 159, 0.08);
-            border: 1px solid rgba(56, 212, 159, 0.15);
-        }
-
         .message-role {
             display: block;
             font-size: 0.73rem;
@@ -499,7 +494,6 @@
                 <button id="import-files-btn" class="header-button">Import Files</button>
                 <button id="import-folder-btn" class="header-button">Import Folder</button>
                 <button id="sound-btn" class="header-button">Sound</button>
-                <button id="mic-btn" class="header-button">Acoustic Lab</button>
                 <button id="developer-toggle" class="header-button">Developer Mode</button>
             </div>
         </header>
@@ -633,8 +627,6 @@
             audioEnabled: false,
             developerMode: false,
             lastLatency: '-- ms',
-            acousticRequestPending: false,
-            microphoneEnabled: false,
             lastFeedbackAtomId: null
         };
 
@@ -659,7 +651,6 @@
         const fileInput = document.getElementById('file-input');
         const folderInput = document.getElementById('folder-input');
         const soundBtn = document.getElementById('sound-btn');
-        const micBtn = document.getElementById('mic-btn');
         const developerToggle = document.getElementById('developer-toggle');
         const diagnosticsPanel = document.getElementById('diagnostics-panel');
         const qwenOutput = document.getElementById('qwen-output');
@@ -672,14 +663,6 @@
         let ws = null;
         let audioCtx = null;
         let compressor = null;
-        let microphoneStream = null;
-        let microphoneSource = null;
-        let microphoneAnalyser = null;
-        let microphoneData = null;
-        let microphoneFrameId = 0;
-        let lastMicrophoneSend = 0;
-        const MICROPHONE_SEND_INTERVAL_MS = 1200;
-        const SPEECH_ENERGY_THRESHOLD = 8;
         const MAX_RECONNECT_DELAY = 30000;
         const PENTATONIC_SCALE = [130.81, 146.83, 164.81, 196.0, 220.0, 261.63, 293.66, 329.63, 392.0, 440.0, 523.25, 587.33, 659.25, 783.99, 880.0, 1046.5];
 
@@ -723,12 +706,10 @@
         }
 
         function roleForAtom(atom) {
-            if (atom.sourceType === 'acoustic') return 'acoustic';
             return atom.sourceKind === 'assistant' ? 'assistant' : 'user';
         }
 
         function labelForAtom(atom) {
-            if (atom.sourceType === 'acoustic') return 'Acoustic Memory';
             if (atom.sourceKind === 'assistant') return 'Assistant';
             return 'You';
         }
@@ -988,85 +969,6 @@
             compressor.connect(audioCtx.destination);
         }
 
-        function normalizeFrequencyToPhase(frequencyData) {
-            return Array.from(frequencyData, (value) => (value / 255) * Math.PI * 2);
-        }
-
-        function stopAcousticUplink() {
-            state.microphoneEnabled = false;
-            state.acousticRequestPending = false;
-            micBtn.classList.remove('active');
-
-            if (microphoneFrameId) {
-                cancelAnimationFrame(microphoneFrameId);
-                microphoneFrameId = 0;
-            }
-
-            if (microphoneSource) {
-                microphoneSource.disconnect();
-                microphoneSource = null;
-            }
-
-            if (microphoneStream) {
-                microphoneStream.getTracks().forEach((track) => track.stop());
-                microphoneStream = null;
-            }
-
-            microphoneAnalyser = null;
-            microphoneData = null;
-            setStatus(state.socketReady ? 'Connected' : 'Offline');
-        }
-
-        function sampleAcousticUplink() {
-            if (!state.microphoneEnabled || !microphoneAnalyser || !microphoneData) return;
-            microphoneAnalyser.getByteFrequencyData(microphoneData);
-
-            const averageEnergy = microphoneData.reduce((sum, value) => sum + value, 0) / microphoneData.length;
-            const now = performance.now();
-
-            if (
-                averageEnergy > SPEECH_ENERGY_THRESHOLD &&
-                state.socketReady &&
-                !state.acousticRequestPending &&
-                now - lastMicrophoneSend >= MICROPHONE_SEND_INTERVAL_MS
-            ) {
-                const waveA = normalizeFrequencyToPhase(microphoneData);
-                state.acousticRequestPending = true;
-                ws.send(JSON.stringify({
-                    waveA,
-                    source: 'acoustic-uplink',
-                    workspaceId: state.currentWorkspaceId
-                }));
-                lastMicrophoneSend = now;
-                setComposerStatus('Listening and sending acoustic signature...');
-                setStatus('Acoustic processing');
-            }
-
-            microphoneFrameId = requestAnimationFrame(sampleAcousticUplink);
-        }
-
-        async function startAcousticUplink() {
-            if (!navigator.mediaDevices?.getUserMedia) {
-                setComposerStatus('Microphone capture is not available in this browser.');
-                return;
-            }
-
-            await initAudio();
-            await audioCtx.resume();
-
-            microphoneStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            microphoneSource = audioCtx.createMediaStreamSource(microphoneStream);
-            microphoneAnalyser = audioCtx.createAnalyser();
-            microphoneAnalyser.fftSize = 512;
-            microphoneData = new Uint8Array(microphoneAnalyser.frequencyBinCount);
-            microphoneSource.connect(microphoneAnalyser);
-
-            state.microphoneEnabled = true;
-            micBtn.classList.add('active');
-            setStatus('Acoustic lab');
-            sampleAcousticUplink();
-        }
-
         function playHolographicChord(vector) {
             if (!state.audioEnabled || !audioCtx || !compressor) return;
 
@@ -1200,7 +1102,6 @@
                 state.socketReady = true;
                 state.reconnectAttempts = 0;
                 sendBtn.disabled = false;
-                micBtn.disabled = false;
                 setStatus('Connected');
                 setComposerStatus('Memory engine ready.');
             };
@@ -1208,16 +1109,12 @@
             ws.onclose = () => {
                 state.socketReady = false;
                 sendBtn.disabled = true;
-                micBtn.disabled = true;
-                if (state.microphoneEnabled) stopAcousticUplink();
                 scheduleReconnect();
             };
 
             ws.onerror = () => {
                 state.socketReady = false;
                 sendBtn.disabled = true;
-                micBtn.disabled = true;
-                if (state.microphoneEnabled) stopAcousticUplink();
                 scheduleReconnect();
                 try {
                     ws.close();
@@ -1233,13 +1130,8 @@
                 }
 
                 if (data.status === 'thought_processed') {
-                    if (data.inputMode === 'acoustic-uplink') {
-                        state.acousticRequestPending = false;
-                        setStatus(state.microphoneEnabled ? 'Acoustic lab' : 'Connected');
-                    } else {
-                        state.lastLatency = data.latencyMs ? `${data.latencyMs} ms` : '-- ms';
-                        metricLatency.innerText = state.lastLatency;
-                    }
+                    state.lastLatency = data.latencyMs ? `${data.latencyMs} ms` : '-- ms';
+                    metricLatency.innerText = state.lastLatency;
                     renderEvidence(data);
                     renderDiagnostics(data.modelOutputs);
                     if (Array.isArray(data.vector)) {
@@ -1247,20 +1139,11 @@
                         playHolographicChord(data.vector);
                     }
                     await refreshSnapshot(data.workspaceId || state.currentWorkspaceId);
-                    setComposerStatus(data.inputMode === 'acoustic-uplink' ? 'Acoustic interpretation ready.' : 'Memory response ready.');
-                    return;
-                }
-
-                if (data.status === 'processed') {
-                    if (Array.isArray(data.vector)) {
-                        draw3D(data.vector);
-                    }
-                    setComposerStatus(`${data.samples || 0} acoustic bins processed.`);
+                    setComposerStatus('Memory response ready.');
                     return;
                 }
 
                 if (data.status === 'error') {
-                    state.acousticRequestPending = false;
                     setComposerStatus(data.message || 'The memory engine returned an error.');
                 }
             };
@@ -1331,20 +1214,6 @@
                 await audioCtx.resume();
             }
             soundBtn.classList.toggle('active', state.audioEnabled);
-        });
-
-        micBtn.addEventListener('click', async () => {
-            if (state.microphoneEnabled) {
-                stopAcousticUplink();
-                return;
-            }
-
-            try {
-                await startAcousticUplink();
-            } catch (error) {
-                stopAcousticUplink();
-                setComposerStatus(error instanceof Error ? error.message : String(error));
-            }
         });
 
         window.addEventListener('resize', resizeVisualizer);

@@ -207,63 +207,6 @@ describe('memory brain', () => {
         expect(projectSnapshot.stats.totalMemories).toBeGreaterThanOrEqual(1);
     });
 
-    test('keeps acoustic lab entries out of the main workspace feed and stats', async () => {
-        const brainPath = testPath('brain-acoustic-feed', 'sqlite');
-        const legacyLedgerPath = testPath('brain-acoustic-feed-legacy', 'crystal');
-        const textPrompt = 'hi';
-        const textReply = 'Hello! How can I assist you today?';
-        const acousticSummary = '[Acoustic Uplink] frequency bins=256; dominant band=17; average phase=1.28 rad.';
-        const acousticReply = 'Based solely on the provided acoustic signature metrics, this voice sounds active and dynamic.';
-
-        const userAtom = await recordInteraction({
-            contentText: textPrompt,
-            waveSignature: vectorFor(textPrompt),
-            sourceKind: 'user',
-            modality: 'text'
-        }, { brainPath, legacyLedgerPath });
-
-        await recordInteraction({
-            contentText: textReply,
-            waveSignature: vectorFor(textReply),
-            sourceKind: 'assistant',
-            modality: 'system_derived',
-            parentAtomId: userAtom.id
-        }, { brainPath, legacyLedgerPath });
-
-        const acousticAtom = await recordInteraction({
-            contentText: acousticSummary,
-            waveSignature: vectorFor(acousticSummary),
-            sourceKind: 'user',
-            modality: 'acoustic_summary'
-        }, { brainPath, legacyLedgerPath });
-
-        await recordInteraction({
-            contentText: acousticReply,
-            waveSignature: vectorFor(acousticReply),
-            sourceKind: 'assistant',
-            modality: 'system_derived',
-            parentAtomId: acousticAtom.id
-        }, { brainPath, legacyLedgerPath });
-
-        const snapshot = await getWorkspaceSnapshot({ brainPath, legacyLedgerPath });
-        const visibleConversation = snapshot.recentConversation.map((atom) => atom.contentText);
-        const visibleTimeline = snapshot.recentActivity.map((atom) => atom.contentText);
-
-        expect(visibleConversation).toContain(textPrompt);
-        expect(visibleConversation).toContain(textReply);
-        expect(visibleConversation).not.toContain(acousticSummary);
-        expect(visibleConversation).not.toContain(acousticReply);
-        expect(visibleTimeline).not.toContain(acousticSummary);
-        expect(visibleTimeline).not.toContain(acousticReply);
-        expect(snapshot.stats.totalMemories).toBe(2);
-        expect(snapshot.stats.conversationTurns).toBe(2);
-
-        const textProbe = await probeMemory(textPrompt, vectorFor(textPrompt), { brainPath, legacyLedgerPath });
-        expect(textProbe.citations.some((citation) => citation.sourceType === 'acoustic')).toBe(false);
-        expect(textProbe.matchedStandingWaveIds).toHaveLength(0);
-        expect(textProbe.assembledContext ?? '').not.toContain('Acoustic Uplink');
-    });
-
     test('keeps correct support atom ids on conflicting evidence branches', async () => {
         const brainPath = testPath('brain-branch-support', 'sqlite');
         const legacyLedgerPath = testPath('brain-branch-support-legacy', 'crystal');
@@ -339,6 +282,34 @@ describe('memory brain', () => {
 
         expect(probe.evidenceGroups.files.length).toBeGreaterThan(0);
         expect(probe.assembledContext).toContain('workspace isolation');
+    });
+
+    test('prefers conversation memory over imported files for first-person continuity queries', async () => {
+        const brainPath = testPath('brain-conversation-preference', 'sqlite');
+        const legacyLedgerPath = testPath('brain-conversation-preference-legacy', 'crystal');
+        const conversationPlan = 'We decided our plan is to replace the ledger with a first-class memory brain.';
+
+        await recordInteraction({
+            contentText: conversationPlan,
+            waveSignature: vectorFor(conversationPlan),
+            sourceKind: 'user',
+            modality: 'text'
+        }, { brainPath, legacyLedgerPath });
+
+        await importFilesToMemory([{
+            name: 'plan.md',
+            relativePath: 'plan.md',
+            content: 'The product plan is to build a local-first memory workspace with evidence-backed recall and imported file support.'
+        }], { brainPath, legacyLedgerPath });
+
+        const probe = await probeMemory(
+            'what is our plan',
+            vectorFor('what is our plan'),
+            { brainPath, legacyLedgerPath }
+        );
+
+        expect(probe.citations[0]?.sourceType).toBe('conversation');
+        expect(probe.assembledContext).toContain(conversationPlan);
     });
 
     test('supports pin, exclude, restore, and mark wrong feedback actions', async () => {

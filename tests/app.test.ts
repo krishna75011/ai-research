@@ -32,7 +32,9 @@ describe('app http contract', () => {
     test('serves the dashboard and bootstrap snapshot', async () => {
         const rootResponse = await app.handle(new Request('http://localhost/'));
         expect(rootResponse.status).toBe(200);
-        expect(await rootResponse.text()).toContain('<title>Chronicle Memory</title>');
+        const rootHtml = await rootResponse.text();
+        expect(rootHtml).toContain('<title>Chronicle Memory</title>');
+        expect(rootHtml).not.toContain('Acoustic Lab');
 
         const bootstrapResponse = await app.handle(new Request('http://localhost/api/bootstrap?workspaceId=personal'));
         expect(bootstrapResponse.status).toBe(200);

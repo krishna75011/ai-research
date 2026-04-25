@@ -8,7 +8,6 @@ Chronicle Memory is a local-first personal memory workspace built on Bun. It sto
 - Conversations are stored as immutable memory atoms.
 - Imported files become cited file-memory chunks.
 - Recall returns evidence groups and conflict warnings instead of silent synthesis.
-- Acoustic input is still available under Labs, but the core product path is chat plus file memory.
 
 ## Setup
 

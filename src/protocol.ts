@@ -1,10 +1,7 @@
 const MAX_THOUGHT_LENGTH = 1000;
-const MAX_WAVE_SAMPLES = 2048;
 const MAX_WORKSPACE_ID_LENGTH = 120;
 
-export type StreamMessage =
-    | { kind: 'thought'; thought: string; workspaceId?: string }
-    | { kind: 'wave'; waveA: number[]; waveB: number[]; source?: string; workspaceId?: string };
+export type StreamMessage = { kind: 'thought'; thought: string; workspaceId?: string };
 
 export function sanitizeThought(value: string): string {
     return value
@@ -37,12 +34,6 @@ function parseUnknownMessage(message: unknown): Record<string, unknown> | null {
     return isPlainObject(message) ? message : null;
 }
 
-function parseWaveArray(value: unknown): number[] | null {
-    if (!Array.isArray(value) || value.length > MAX_WAVE_SAMPLES) return null;
-    if (value.some((sample) => typeof sample !== 'number' || !Number.isFinite(sample))) return null;
-    return value.map((sample) => sample as number);
-}
-
 export function parseStreamMessage(message: unknown): StreamMessage | null {
     const parsed = parseUnknownMessage(message);
     if (!parsed) return null;
@@ -54,15 +45,5 @@ export function parseStreamMessage(message: unknown): StreamMessage | null {
         return thought ? { kind: 'thought', thought, workspaceId } : null;
     }
 
-    const waveA = parseWaveArray(parsed.waveA);
-    if (!waveA) return null;
-
-    const source = typeof parsed.source === 'string' ? parsed.source : undefined;
-    if ('waveB' in parsed && parsed.waveB !== undefined) {
-        const waveB = parseWaveArray(parsed.waveB);
-        return waveB ? { kind: 'wave', waveA, waveB, source, workspaceId } : null;
-    }
-
-    const waveB = waveA.map((phase) => (phase + Math.PI / 2) % (Math.PI * 2));
-    return { kind: 'wave', waveA, waveB, source, workspaceId };
+    return null;
 }

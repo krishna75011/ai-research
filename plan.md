@@ -29,7 +29,6 @@ This plan replaces the old ledger-centric plan.
   - `query_text`, `query_wave_signature_json`, `matched_atom_ids_json`, `matched_standing_wave_ids_json`, `matched_branch_ids_json`, `assembled_context`, `citations_json`
 - `modality` values for v1:
   - `text`
-  - `acoustic_summary`
   - `system_derived`
   - `legacy_import`
 
@@ -40,11 +39,6 @@ This plan replaces the old ledger-centric plan.
   - deterministically extract candidate facts, entities, preferences, decisions, and open tasks
   - update or create matching `StandingWave` records
   - update branch records if the new fact conflicts with an existing fact on the same topic
-- On every acoustic turn:
-  - keep acoustic input as a secondary modality
-  - store the acoustic summary text plus its wave signature as a `MemoryAtom`
-  - do not treat acoustic summaries as canonical factual truth by default
-  - allow acoustic atoms to reinforce mood/tone/intent standing waves, but not overwrite factual branches
 - Deterministic extraction rules for v1:
   - entity extraction from names, projects, paths, dates, model names, and explicit user preference phrasing
   - fact extraction for `I want`, `I prefer`, `we decided`, `remember that`, `use X`, `don't use Y`, and dated decisions
@@ -96,7 +90,6 @@ This plan replaces the old ledger-centric plan.
   - `memoryCitations`
   - `memoryMode`
   - optional `branchWarnings`
-- Keep acoustic uplink enabled, but route it through `recordInteraction` using `modality='acoustic_summary'`.
 
 ## Test Plan
 
@@ -114,11 +107,8 @@ This plan replaces the old ledger-centric plan.
 - Consolidation:
   - repeated preferences reinforce one standing wave instead of creating duplicate canonical memories
   - open tasks remain recallable until explicitly resolved
-- Acoustic behavior:
-  - acoustic inputs create secondary memory atoms
-  - acoustic atoms can be recalled as context, but do not override canonical factual branches
 - Integration:
-  - text and acoustic flows both return `thought_processed`
+  - text flows return `thought_processed`
   - response payload includes citations and memory mode
   - local models still run through the same dual-brain generation path
 
@@ -128,5 +118,4 @@ This plan replaces the old ledger-centric plan.
 - This app remains the main host; no standalone service split in the first pass.
 - SQLite is acceptable as the durability substrate; the novel technology is the memory model, consolidation, and probe-recall behavior.
 - Deterministic extraction is authoritative in v1; LLM-assisted consolidation is supplemental.
-- Acoustic input remains a secondary modality.
 - Existing Qwen/Gemma local inference remains in place as the language layer.

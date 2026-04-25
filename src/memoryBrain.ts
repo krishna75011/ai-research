@@ -37,9 +37,9 @@ const ORCHESTRATION_ARTIFACT_PATTERNS = [
     'more specific and relevant to the user'
 ] as const;
 
-export type MemoryModality = 'text' | 'acoustic_summary' | 'system_derived' | 'legacy_import' | 'file_chunk';
+export type MemoryModality = 'text' | 'system_derived' | 'legacy_import' | 'file_chunk';
 export type MemorySourceKind = 'user' | 'assistant' | 'system' | 'legacy_ledger';
-export type MemorySourceType = 'conversation' | 'file' | 'acoustic' | 'system' | 'legacy';
+export type MemorySourceType = 'conversation' | 'file' | 'system' | 'legacy';
 export type MemoryRecallState = 'active' | 'excluded' | 'superseded';
 export type MemoryCorrectionState = 'none' | 'incorrect' | 'corrected';
 export type MemoryFeedbackAction = 'pin' | 'exclude' | 'mark_wrong' | 'restore';
@@ -231,22 +231,10 @@ interface TimeAnchor {
     prefersPast: boolean;
 }
 
-const ACOUSTIC_QUERY_KEYWORDS = [
-    'acoustic',
-    'audio',
-    'sound',
-    'voice',
-    'vocal',
-    'microphone',
-    'mic',
-    'tone',
-    'pitch',
-    'speech',
-    'frequency',
-    'frequencies',
-    'uplink',
-    'resonance signature'
-] as const;
+interface RecallPreference {
+    preferConversation: boolean;
+    preferFiles: boolean;
+}
 
 type WorkspaceRow = {
     id: string;
@@ -431,7 +419,7 @@ function extractEntityKeys(text: string): string[] {
         entities.add(match);
     }
 
-    for (const phrase of ['chronicle memory', 'virtual crystal', 'acoustic uplink', 'memory brain', 'qwen', 'gemma', 'sqlite', 'llm', 'llms']) {
+    for (const phrase of ['chronicle memory', 'virtual crystal', 'memory brain', 'qwen', 'gemma', 'sqlite', 'llm', 'llms']) {
         if (normalized.includes(phrase)) {
             entities.add(phrase.replace(/\s+/g, '-'));
         }
@@ -456,24 +444,9 @@ function splitSentences(text: string): string[] {
         .filter(Boolean);
 }
 
-function queryAllowsAcousticRecall(queryText: string): boolean {
-    const normalized = normalizeText(queryText);
-    return ACOUSTIC_QUERY_KEYWORDS.some((keyword) => normalized.includes(keyword));
-}
-
-function isAcousticAtom(atom: MemoryAtom, atomById: Map<number, MemoryAtom>): boolean {
-    if (atom.sourceType === 'acoustic' || atom.modality === 'acoustic_summary') {
-        return true;
-    }
-
-    const parent = atom.parentAtomId ? atomById.get(atom.parentAtomId) : null;
-    return Boolean(parent && isAcousticAtom(parent, atomById));
-}
-
 function inferSourceType(input: RecordInteractionInput): MemorySourceType {
     if (input.sourceType) return input.sourceType;
     if (input.modality === 'file_chunk') return 'file';
-    if (input.modality === 'acoustic_summary') return 'acoustic';
     if (input.modality === 'legacy_import') return 'legacy';
     if (input.sourceKind === 'assistant') return 'conversation';
     if (input.sourceKind === 'system') return 'system';
@@ -501,6 +474,17 @@ function inferTimeAnchor(queryText: string): TimeAnchor {
         preferredYear: null,
         prefersPast: /\b(previously|earlier|before|discussed previously|last time)\b/.test(normalized)
     };
+}
+
+function inferRecallPreference(queryText: string): RecallPreference {
+    const normalized = normalizeText(queryText);
+    const preferFiles = /\b(file|files|document|documents|doc|docs|note|notes|source|sources|import|imported|readme|plan\.md|markdown|folder|code)\b/.test(normalized);
+    const preferConversation = !preferFiles && (
+        /\b(we|our|us)\b/.test(normalized) ||
+        /\b(discuss|discussed|decide|decided|talk|talked|said|asked|conversation|chat|earlier|previously|last time)\b/.test(normalized)
+    );
+
+    return { preferConversation, preferFiles };
 }
 
 function timeScore(createdAt: string, timeAnchor: TimeAnchor): number {
@@ -823,7 +807,7 @@ function resolveWorkspaceId(db: Database, requested: string | null | undefined):
 }
 
 function runMemoryMaintenance(db: Database) {
-    const maintenanceKey = 'maintenance:purge-orchestration-artifacts:v2';
+    const maintenanceKey = 'maintenance:purge-orchestration-artifacts:v3';
     if (getMeta(db, maintenanceKey)) return;
 
     db.query(`
@@ -845,6 +829,26 @@ function runMemoryMaintenance(db: Database) {
              OR content_text LIKE '%final answer should be%'
              OR content_text LIKE '%more specific and relevant to the user%'
           )
+    `).run();
+
+    db.query(`
+        DELETE FROM memory_atoms
+        WHERE source_type = 'acoustic'
+           OR modality = 'acoustic_summary'
+           OR raw_payload_json LIKE '%acoustic-uplink%'
+    `).run();
+
+    db.query(`
+        DELETE FROM standing_waves
+        WHERE kind LIKE 'acoustic_%'
+           OR topic_key LIKE 'acoustic_%'
+    `).run();
+
+    db.query(`
+        DELETE FROM evidence_branches
+        WHERE kind LIKE 'acoustic_%'
+           OR topic_key LIKE 'acoustic_%'
+           OR branch_text LIKE '%Acoustic Uplink%'
     `).run();
 
     setMeta(db, maintenanceKey, new Date().toISOString());
@@ -960,35 +964,7 @@ function insertAtomRow(db: Database, input: RecordInteractionInput, workspaceId:
     return mapAtom(inserted);
 }
 
-function extractAcousticMemory(text: string, workspaceId: string, atomId: number, createdAt: string): DerivedMemory[] {
-    const phaseSpread = Number(text.match(/phase spread=([0-9.]+)/i)?.[1] ?? '0');
-    const activeBands = Number(text.match(/active bands=([0-9.]+)/i)?.[1] ?? '0');
-    const peakMagnitude = Number(text.match(/peak interference magnitude=([0-9.]+)/i)?.[1] ?? '0');
-
-    const descriptors: string[] = [];
-    descriptors.push(phaseSpread >= 1.6 ? 'volatile' : phaseSpread >= 0.9 ? 'dynamic' : 'steady');
-    descriptors.push(activeBands >= 100 ? 'dense-spectrum' : activeBands >= 40 ? 'mid-spectrum' : 'focused-spectrum');
-    descriptors.push(peakMagnitude >= 1.8 ? 'high-intensity' : peakMagnitude >= 1.1 ? 'moderate-intensity' : 'low-intensity');
-
-    const canonicalText = `acoustic tone: ${descriptors.join(', ')}`;
-    return [{
-        workspaceId,
-        kind: 'acoustic_tone',
-        topicKey: 'acoustic_tone',
-        canonicalText,
-        confidence: 0.35,
-        entityKeys: descriptors,
-        sourceAtomIds: [atomId],
-        firstSeenAt: createdAt,
-        lastReinforcedAt: createdAt
-    }];
-}
-
 function extractDerivedMemories(atom: MemoryAtom): DerivedMemory[] {
-    if (atom.modality === 'acoustic_summary') {
-        return extractAcousticMemory(atom.contentText, atom.workspaceId, atom.id, atom.createdAt);
-    }
-
     if (atom.sourceKind === 'assistant') {
         return [];
     }
@@ -1098,7 +1074,7 @@ function rebuildWorkspaceDerivatives(db: Database, workspaceId: string) {
 
     const grouped = new Map<string, StandingWaveRow[]>();
     for (const row of standingRows) {
-        if (row.kind === 'acoustic_tone' || row.kind === 'task') continue;
+        if (row.kind === 'task') continue;
         const key = `${row.kind}\u0000${row.topic_key}`;
         const list = grouped.get(key) ?? [];
         list.push(row);
@@ -1186,24 +1162,28 @@ function ensureLegacyImported(db: Database, options: MemoryBrainOptions = {}) {
     }
 }
 
-function rankAtoms(atoms: MemoryAtom[], queryText: string, queryWaveSignature: WaveUnit[], allowAcoustic: boolean): Array<{ atom: MemoryAtom; score: number }> {
+function rankAtoms(atoms: MemoryAtom[], queryText: string, queryWaveSignature: WaveUnit[]): Array<{ atom: MemoryAtom; score: number }> {
     const queryTokens = tokenize(queryText);
     const queryEntities = extractEntityKeys(queryText);
     const timeAnchor = inferTimeAnchor(queryText);
-    const atomById = new Map(atoms.map((atom) => [atom.id, atom]));
+    const recallPreference = inferRecallPreference(queryText);
 
     return atoms
         .filter((atom) => atom.recallState === 'active' && !shouldSuppressAtomFromRecall(atom))
-        .filter((atom) => allowAcoustic || !isAcousticAtom(atom, atomById))
         .map((atom) => {
             const lexical = overlapScore(queryTokens, tokenize(atom.contentText));
             const entity = overlapScore(queryEntities, atom.entityKeys);
             const wave = cosineSimilarity(queryWaveSignature, atom.waveSignature);
             const time = timeScore(atom.createdAt, timeAnchor);
             const pinned = atom.isPinned ? 1 : 0;
-            const sourceBoost = atom.sourceType === 'file' ? 0.04 : atom.sourceType === 'conversation' ? 0.02 : 0;
+            const sourceBoost = atom.sourceType === 'conversation' ? 0.04 : atom.sourceType === 'file' ? 0.02 : 0;
+            const intentBoost = recallPreference.preferConversation
+                ? atom.sourceType === 'conversation' ? 0.12 : atom.sourceType === 'file' ? -0.05 : 0
+                : recallPreference.preferFiles
+                    ? atom.sourceType === 'file' ? 0.12 : atom.sourceType === 'conversation' ? -0.04 : 0
+                    : 0;
             const assistantPenalty = atom.sourceKind === 'assistant' ? -0.03 : 0;
-            const score = lexical * 0.32 + entity * 0.18 + wave * 0.25 + time * 0.08 + pinned * 0.1 + atom.salience * 0.05 + sourceBoost + assistantPenalty;
+            const score = lexical * 0.32 + entity * 0.18 + wave * 0.25 + time * 0.08 + pinned * 0.1 + atom.salience * 0.05 + sourceBoost + intentBoost + assistantPenalty;
 
             return { atom, score };
         })
@@ -1211,18 +1191,16 @@ function rankAtoms(atoms: MemoryAtom[], queryText: string, queryWaveSignature: W
         .sort((left, right) => right.score - left.score);
 }
 
-function rankStandingWaves(waves: StandingWave[], queryText: string, queryWaveSignature: WaveUnit[], allowAcoustic: boolean): Array<{ wave: StandingWave; score: number }> {
+function rankStandingWaves(waves: StandingWave[], queryText: string): Array<{ wave: StandingWave; score: number }> {
     const queryTokens = tokenize(queryText);
     const queryEntities = extractEntityKeys(queryText);
 
     return waves
-        .filter((wave) => allowAcoustic || !wave.kind.startsWith('acoustic_'))
         .map((wave) => {
             const lexical = overlapScore(queryTokens, tokenize(wave.canonicalText));
             const entity = overlapScore(queryEntities, wave.entityKeys);
-            const waveHint = queryWaveSignature.length > 0 && wave.kind === 'acoustic_tone' ? 0.2 : 0;
             const support = clamp(wave.supportCount / 6, 0, 1);
-            const score = lexical * 0.42 + entity * 0.25 + support * 0.18 + wave.stability * 0.15 + waveHint;
+            const score = lexical * 0.42 + entity * 0.25 + support * 0.18 + wave.stability * 0.15;
 
             return { wave, score };
         })
@@ -1272,54 +1250,28 @@ function buildEvidenceGroups(citations: MemoryCitation[]): ProbeEvidenceGroups {
     };
 }
 
-function getTimelineNeighbors(db: Database, workspaceId: string, atomId: number, allowAcoustic: boolean): MemoryAtom[] {
+function getTimelineNeighbors(db: Database, workspaceId: string, atomId: number): MemoryAtom[] {
     const neighbors: MemoryAtom[] = [];
 
-    const previous = allowAcoustic
-        ? db.query(`
-            SELECT * FROM memory_atoms
-            WHERE workspace_id = ?
-              AND id < ?
-              AND recall_state = 'active'
-              AND source_type != 'file'
-            ORDER BY id DESC
-            LIMIT 1
-        `).get(workspaceId, atomId) as AtomRow | null
-        : db.query(`
-            SELECT child.* FROM memory_atoms child
-            LEFT JOIN memory_atoms parent ON parent.id = child.parent_atom_id
-            WHERE child.workspace_id = ?
-              AND child.id < ?
-              AND child.recall_state = 'active'
-              AND child.source_type != 'file'
-              AND child.source_type != 'acoustic'
-              AND COALESCE(parent.source_type, '') != 'acoustic'
-            ORDER BY child.id DESC
-            LIMIT 1
-        `).get(workspaceId, atomId) as AtomRow | null;
+    const previous = db.query(`
+        SELECT * FROM memory_atoms
+        WHERE workspace_id = ?
+          AND id < ?
+          AND recall_state = 'active'
+          AND source_type != 'file'
+        ORDER BY id DESC
+        LIMIT 1
+    `).get(workspaceId, atomId) as AtomRow | null;
 
-    const next = allowAcoustic
-        ? db.query(`
-            SELECT * FROM memory_atoms
-            WHERE workspace_id = ?
-              AND id > ?
-              AND recall_state = 'active'
-              AND source_type != 'file'
-            ORDER BY id ASC
-            LIMIT 1
-        `).get(workspaceId, atomId) as AtomRow | null
-        : db.query(`
-            SELECT child.* FROM memory_atoms child
-            LEFT JOIN memory_atoms parent ON parent.id = child.parent_atom_id
-            WHERE child.workspace_id = ?
-              AND child.id > ?
-              AND child.recall_state = 'active'
-              AND child.source_type != 'file'
-              AND child.source_type != 'acoustic'
-              AND COALESCE(parent.source_type, '') != 'acoustic'
-            ORDER BY child.id ASC
-            LIMIT 1
-        `).get(workspaceId, atomId) as AtomRow | null;
+    const next = db.query(`
+        SELECT * FROM memory_atoms
+        WHERE workspace_id = ?
+          AND id > ?
+          AND recall_state = 'active'
+          AND source_type != 'file'
+        ORDER BY id ASC
+        LIMIT 1
+    `).get(workspaceId, atomId) as AtomRow | null;
 
     if (previous) {
         const atom = mapAtom(previous);
@@ -1382,26 +1334,20 @@ export async function getWorkspaceSnapshot(options: MemoryBrainOptions = {}): Pr
     const workspaces = await listWorkspaces(options);
 
     const recentConversationRows = db.query(`
-        SELECT child.* FROM memory_atoms child
-        LEFT JOIN memory_atoms parent ON parent.id = child.parent_atom_id
-        WHERE child.workspace_id = ?
-          AND child.recall_state = 'active'
-          AND child.source_type != 'file'
-          AND child.source_type != 'acoustic'
-          AND COALESCE(parent.source_type, '') != 'acoustic'
-        ORDER BY datetime(child.created_at) DESC, child.id DESC
+        SELECT * FROM memory_atoms
+        WHERE workspace_id = ?
+          AND recall_state = 'active'
+          AND source_type != 'file'
+        ORDER BY datetime(created_at) DESC, id DESC
         LIMIT 16
     `).all(workspaceId) as AtomRow[];
 
     const recentActivityRows = db.query(`
-        SELECT child.* FROM memory_atoms child
-        LEFT JOIN memory_atoms parent ON parent.id = child.parent_atom_id
-        WHERE child.workspace_id = ?
-          AND child.recall_state = 'active'
-          AND child.source_type != 'file'
-          AND child.source_type != 'acoustic'
-          AND COALESCE(parent.source_type, '') != 'acoustic'
-        ORDER BY datetime(child.created_at) DESC, child.id DESC
+        SELECT * FROM memory_atoms
+        WHERE workspace_id = ?
+          AND recall_state = 'active'
+          AND source_type != 'file'
+        ORDER BY datetime(created_at) DESC, id DESC
         LIMIT 24
     `).all(workspaceId) as AtomRow[];
 
@@ -1409,22 +1355,12 @@ export async function getWorkspaceSnapshot(options: MemoryBrainOptions = {}): Pr
 
     const statsRow = db.query(`
         SELECT
-            SUM(CASE
-                WHEN child.source_type != 'acoustic' AND COALESCE(parent.source_type, '') != 'acoustic'
-                THEN 1 ELSE 0
-            END) AS total_memories,
-            SUM(CASE
-                WHEN child.is_pinned = 1 AND child.source_type != 'acoustic' AND COALESCE(parent.source_type, '') != 'acoustic'
-                THEN 1 ELSE 0
-            END) AS pinned_memories,
-            SUM(CASE
-                WHEN child.source_type != 'file' AND child.source_type != 'acoustic' AND COALESCE(parent.source_type, '') != 'acoustic'
-                THEN 1 ELSE 0
-            END) AS conversation_turns
-        FROM memory_atoms child
-        LEFT JOIN memory_atoms parent ON parent.id = child.parent_atom_id
-        WHERE child.workspace_id = ?
-          AND child.recall_state = 'active'
+            COUNT(*) AS total_memories,
+            SUM(CASE WHEN is_pinned = 1 THEN 1 ELSE 0 END) AS pinned_memories,
+            SUM(CASE WHEN source_type != 'file' THEN 1 ELSE 0 END) AS conversation_turns
+        FROM memory_atoms
+        WHERE workspace_id = ?
+          AND recall_state = 'active'
     `).get(workspaceId) as { total_memories: number; pinned_memories: number | null; conversation_turns: number | null };
 
     return {
@@ -1668,15 +1604,14 @@ export async function probeMemory(queryText: string, queryWaveSignature: WaveUni
     const atoms = atomRows.map(mapAtom);
     const standingWaves = standingWaveRows.map(mapStandingWave);
     const branches = branchRows.map(mapEvidenceBranch);
-    const allowAcoustic = queryAllowsAcousticRecall(queryText);
 
-    const topAtoms = rankAtoms(atoms, queryText, queryWaveSignature, allowAcoustic).slice(0, 4);
-    const topStandingWaves = rankStandingWaves(standingWaves, queryText, queryWaveSignature, allowAcoustic).slice(0, 3);
+    const topAtoms = rankAtoms(atoms, queryText, queryWaveSignature).slice(0, 4);
+    const topStandingWaves = rankStandingWaves(standingWaves, queryText).slice(0, 3);
     const topBranches = rankBranches(branches, queryText).slice(0, 4);
 
     const timelineAnchors = new Map<number, MemoryAtom>();
     for (const ranked of topAtoms.slice(0, 2)) {
-        for (const neighbor of getTimelineNeighbors(db, workspaceId, ranked.atom.id, allowAcoustic)) {
+        for (const neighbor of getTimelineNeighbors(db, workspaceId, ranked.atom.id)) {
             if (!topAtoms.some((candidate) => candidate.atom.id === neighbor.id)) {
                 timelineAnchors.set(neighbor.id, neighbor);
             }

@@ -1,15 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { Elysia } from 'elysia';
+import { textToWave } from '../src/modulator';
 import { parseStreamMessage } from '../src/protocol';
 import { simulateInterference } from '../src/virtualCrystal';
-
-/**
- * Integration test for the WebSocket wave processing pipeline.
- *
- * Uses a minimal test server that mirrors the real server's wave handling
- * without importing localBrain (which requires GGUF model files).
- * This validates: protocol parsing → interference simulation → response format.
- */
 
 const TEST_PORT = 9877;
 let server: { stop(): void };
@@ -24,15 +17,16 @@ function createTestServer() {
                     return;
                 }
 
-                if (parsed.kind === 'wave') {
-                    const interference = simulateInterference(parsed.waveA, parsed.waveB);
-                    ws.send(JSON.stringify({
-                        status: 'processed',
-                        samples: interference.length,
-                        vector: interference,
-                        timestamp: Date.now()
-                    }));
-                }
+                const waveA = textToWave(parsed.thought);
+                const waveB = waveA.map((phase) => (phase + Math.PI / 2) % (Math.PI * 2));
+                const vector = simulateInterference(waveA, waveB);
+
+                ws.send(JSON.stringify({
+                    status: 'thought_processed',
+                    response: `Echo: ${parsed.thought}`,
+                    vector,
+                    timestamp: Date.now()
+                }));
             }
         })
         .listen(TEST_PORT);
@@ -63,19 +57,19 @@ afterAll(() => {
 });
 
 describe('WebSocket server integration', () => {
-    test('returns processed interference for a valid wave message', async () => {
+    test('returns a thought response for a valid thought message', async () => {
         const ws = await connectWs();
         try {
             const response = nextMessage(ws);
-            ws.send(JSON.stringify({ waveA: [0, Math.PI / 2], waveB: [Math.PI, 0] }));
+            ws.send(JSON.stringify({ thought: 'hello memory' }));
 
             const data = await response;
-            expect(data.status).toBe('processed');
-            expect(data.samples).toBe(2);
+            expect(data.status).toBe('thought_processed');
+            expect(data.response).toBe('Echo: hello memory');
             expect(Array.isArray(data.vector)).toBe(true);
 
             const vector = data.vector as { re: number; im: number }[];
-            expect(vector).toHaveLength(2);
+            expect(vector.length).toBeGreaterThan(0);
             expect(typeof vector[0]!.re).toBe('number');
             expect(typeof vector[0]!.im).toBe('number');
         } finally {
@@ -92,20 +86,6 @@ describe('WebSocket server integration', () => {
             const data = await response;
             expect(data.status).toBe('error');
             expect(typeof data.message).toBe('string');
-        } finally {
-            ws.close();
-        }
-    });
-
-    test('synthesizes quadrature waveB when only waveA is provided', async () => {
-        const ws = await connectWs();
-        try {
-            const response = nextMessage(ws);
-            ws.send(JSON.stringify({ waveA: [0, Math.PI / 4], source: 'acoustic-uplink' }));
-
-            const data = await response;
-            expect(data.status).toBe('processed');
-            expect(data.samples).toBe(2);
         } finally {
             ws.close();
         }
