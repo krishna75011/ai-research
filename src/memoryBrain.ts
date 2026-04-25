@@ -1322,20 +1322,26 @@ export async function getWorkspaceSnapshot(options: MemoryBrainOptions = {}): Pr
     const workspaces = await listWorkspaces(options);
 
     const recentConversationRows = db.query(`
-        SELECT * FROM memory_atoms
-        WHERE workspace_id = ?
-          AND recall_state = 'active'
-          AND source_type != 'file'
-        ORDER BY datetime(created_at) DESC, id DESC
+        SELECT child.* FROM memory_atoms child
+        LEFT JOIN memory_atoms parent ON parent.id = child.parent_atom_id
+        WHERE child.workspace_id = ?
+          AND child.recall_state = 'active'
+          AND child.source_type != 'file'
+          AND child.source_type != 'acoustic'
+          AND COALESCE(parent.source_type, '') != 'acoustic'
+        ORDER BY datetime(child.created_at) DESC, child.id DESC
         LIMIT 16
     `).all(workspaceId) as AtomRow[];
 
     const recentActivityRows = db.query(`
-        SELECT * FROM memory_atoms
-        WHERE workspace_id = ?
-          AND recall_state = 'active'
-          AND source_type != 'file'
-        ORDER BY datetime(created_at) DESC, id DESC
+        SELECT child.* FROM memory_atoms child
+        LEFT JOIN memory_atoms parent ON parent.id = child.parent_atom_id
+        WHERE child.workspace_id = ?
+          AND child.recall_state = 'active'
+          AND child.source_type != 'file'
+          AND child.source_type != 'acoustic'
+          AND COALESCE(parent.source_type, '') != 'acoustic'
+        ORDER BY datetime(child.created_at) DESC, child.id DESC
         LIMIT 24
     `).all(workspaceId) as AtomRow[];
 
@@ -1343,12 +1349,22 @@ export async function getWorkspaceSnapshot(options: MemoryBrainOptions = {}): Pr
 
     const statsRow = db.query(`
         SELECT
-            COUNT(*) AS total_memories,
-            SUM(CASE WHEN is_pinned = 1 THEN 1 ELSE 0 END) AS pinned_memories,
-            SUM(CASE WHEN source_type != 'file' THEN 1 ELSE 0 END) AS conversation_turns
-        FROM memory_atoms
-        WHERE workspace_id = ?
-          AND recall_state = 'active'
+            SUM(CASE
+                WHEN child.source_type != 'acoustic' AND COALESCE(parent.source_type, '') != 'acoustic'
+                THEN 1 ELSE 0
+            END) AS total_memories,
+            SUM(CASE
+                WHEN child.is_pinned = 1 AND child.source_type != 'acoustic' AND COALESCE(parent.source_type, '') != 'acoustic'
+                THEN 1 ELSE 0
+            END) AS pinned_memories,
+            SUM(CASE
+                WHEN child.source_type != 'file' AND child.source_type != 'acoustic' AND COALESCE(parent.source_type, '') != 'acoustic'
+                THEN 1 ELSE 0
+            END) AS conversation_turns
+        FROM memory_atoms child
+        LEFT JOIN memory_atoms parent ON parent.id = child.parent_atom_id
+        WHERE child.workspace_id = ?
+          AND child.recall_state = 'active'
     `).get(workspaceId) as { total_memories: number; pinned_memories: number | null; conversation_turns: number | null };
 
     return {

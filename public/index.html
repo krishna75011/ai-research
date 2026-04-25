@@ -1233,11 +1233,12 @@
                 }
 
                 if (data.status === 'thought_processed') {
-                    state.lastLatency = data.latencyMs ? `${data.latencyMs} ms` : '-- ms';
-                    metricLatency.innerText = state.lastLatency;
                     if (data.inputMode === 'acoustic-uplink') {
                         state.acousticRequestPending = false;
                         setStatus(state.microphoneEnabled ? 'Acoustic lab' : 'Connected');
+                    } else {
+                        state.lastLatency = data.latencyMs ? `${data.latencyMs} ms` : '-- ms';
+                        metricLatency.innerText = state.lastLatency;
                     }
                     renderEvidence(data);
                     renderDiagnostics(data.modelOutputs);
@@ -1246,7 +1247,7 @@
                         playHolographicChord(data.vector);
                     }
                     await refreshSnapshot(data.workspaceId || state.currentWorkspaceId);
-                    setComposerStatus('Memory response ready.');
+                    setComposerStatus(data.inputMode === 'acoustic-uplink' ? 'Acoustic interpretation ready.' : 'Memory response ready.');
                     return;
                 }
 
