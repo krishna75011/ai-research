@@ -1241,12 +1241,9 @@ function rankBranches(branches: EvidenceBranch[], queryText: string): Array<{ br
         .sort((left, right) => right.score - left.score);
 }
 
-function formatAtom(atom: MemoryAtom): string {
-    const sourceLabel = atom.sourceType === 'file'
-        ? `${atom.sourceTitle ?? atom.sourceUri ?? 'File'}`
-        : `${atom.sourceKind}/${atom.modality}`;
-
-    return `- Atom #${atom.id} @ ${atom.createdAt} [${sourceLabel}]: ${excerpt(atom.contentText, 220)}`;
+function formatAtomForContext(atom: MemoryAtom): string {
+    const sourceLabel = atom.sourceKind === 'user' ? 'User' : 'Assistant';
+    return `[${atom.createdAt}] ${sourceLabel}: ${excerpt(atom.contentText, 300)}`;
 }
 
 function formatStandingWave(wave: StandingWave): string {
@@ -1666,7 +1663,7 @@ export async function probeMemory(queryText: string, queryWaveSignature: WaveUni
     if (topAtoms.length > 0) {
         contextSections.push('[Evidence Recall]');
         for (const ranked of topAtoms) {
-            contextSections.push(formatAtom(ranked.atom));
+            contextSections.push(formatAtomForContext(ranked.atom));
             citations.push({
                 kind: 'atom',
                 id: ranked.atom.id,
@@ -1686,7 +1683,7 @@ export async function probeMemory(queryText: string, queryWaveSignature: WaveUni
     if (timelineAnchors.size > 0) {
         contextSections.push('[Timeline Anchors]');
         for (const atom of timelineAnchors.values()) {
-            contextSections.push(formatAtom(atom));
+            contextSections.push(formatAtomForContext(atom));
             citations.push({
                 kind: 'atom',
                 id: atom.id,

@@ -207,11 +207,12 @@ export async function processWaveThought(
                 gemmaOutput,
                 '',
                 'Write the final assistant reply to the user.',
-                'Answer the user directly in plain language.',
+                'Answer the user directly in plain language as a helpful companion.',
                 'Do not compare the candidates.',
+                'CRITICAL: Do not include any technical IDs, timestamps, or "Atom #" prefixes in your response.',
                 'Do not mention internal model names, internal phases, or which answer is better.',
                 'Do not say "the final answer should be".',
-                'Return only the final user-facing reply.'
+                'Return ONLY the final user-facing text.'
             ].join('\n');
 
             const synthesizedResponse = await synthesisSession.prompt(mergePrompt, {
