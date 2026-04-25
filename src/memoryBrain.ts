@@ -1243,8 +1243,8 @@ function rankBranches(branches: EvidenceBranch[], queryText: string): Array<{ br
 
 function formatAtomForContext(atom: MemoryAtom): string {
     const timestamp = new Date(atom.createdAt).toLocaleString();
-    const role = atom.sourceKind === 'user' ? 'User' : 'Assistant';
-    return `[${timestamp}] ${role}: ${atom.contentText}`;
+    const role = atom.sourceKind === 'user' ? 'the User' : 'the Assistant';
+    return `### At ${timestamp}, ${role} said: ${atom.contentText}`;
 }
 
 function formatStandingWave(wave: StandingWave): string {

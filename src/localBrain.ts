@@ -6,6 +6,7 @@ interface BrainResources {
     qwenContext: LlamaContext;
     gemmaContext: LlamaContext;
     systemPrompt: string;
+    synthesisSystemPrompt: string;
 }
 
 const META_RESPONSE_PATTERNS = [
@@ -55,6 +56,8 @@ function scoreCandidateResponse(value: string | null | undefined): number {
     if (/^(hi|hello|hey)\b/i.test(text)) score += 0.5;
     if (/\b(qwen|gemma)\b/i.test(text)) score -= 8;
     if (/\b(response is|final answer should|therefore)\b/i.test(text)) score -= 4;
+    if (/\b(i (am sorry|don't know|cannot recall|do not have))\b/i.test(text)) score -= 6;
+    if (text.includes('### At')) score -= 10; // Penalize echoing the new transcript format
 
     return score;
 }
@@ -116,7 +119,7 @@ async function initializeResources(): Promise<BrainResources> {
     const gemmaModel = await llama.loadModel({ modelPath: gemmaPath });
     const gemmaContext = await gemmaModel.createContext({
         contextSize: 2048,
-        sequences: 1,
+        sequences: 2,
         threads: 4
     });
 
@@ -128,6 +131,14 @@ async function initializeResources(): Promise<BrainResources> {
             'Your primary goal is to answer based on the provided ## MEMORY CONTEXT.',
             'If the context contains the answer, use it. Do not say you do not know if the information is present in the context.',
             'If there are conflicts in the evidence, mention them clearly.'
+        ].join(' '),
+        synthesisSystemPrompt: [
+            'You are a high-authority synthesis engine for Chronicle Memory.',
+            'You will receive a User Input and two Candidate Answers.',
+            'Your task is to produce the single best response for the user.',
+            'CRITICAL: If one candidate provides a detailed answer and the other says "I don\'t know", ALWAYS prefer the detailed answer.',
+            'DO NOT echo internal tags like [User Input] or labels like "User:".',
+            'Provide ONLY the clean, conversational assistant reply.'
         ].join(' ')
     };
 }
@@ -161,7 +172,7 @@ export async function processWaveThought(
     onToken?: (token: string) => void
 ): Promise<WaveThoughtResult> {
     return withInferenceLock(async () => {
-        const { qwenContext, gemmaContext, systemPrompt } = await ensureResources();
+        const { qwenContext, gemmaContext, systemPrompt, synthesisSystemPrompt } = await ensureResources();
         let qwenSession: LlamaChatSession | null = null;
         let gemmaSession: LlamaChatSession | null = null;
         let synthesisSession: LlamaChatSession | null = null;
@@ -191,12 +202,13 @@ export async function processWaveThought(
                 gemmaSession.prompt(input)
             ]);
 
+            // Release initial sessions before starting synthesis
             qwenSession.dispose({ disposeSequence: true });
             qwenSession = null;
             gemmaSession.dispose({ disposeSequence: true });
             gemmaSession = null;
 
-            synthesisSession = createSession(qwenContext, contextualSystemPrompt);
+            synthesisSession = createSession(gemmaContext, synthesisSystemPrompt);
             const mergePrompt = [
                 '[User Input]:',
                 input,
@@ -207,14 +219,7 @@ export async function processWaveThought(
                 '[Candidate Answer B]:',
                 gemmaOutput,
                 '',
-                'Combine the evidence and candidate answers into a single, clean assistant response.',
-                'Answer the user directly and conversationally.',
-                'DO NOT repeat the [User Input] or [Candidate Answer] headers.',
-                'DO NOT include labels like "User:", "Assistant:", or timestamps in your output.',
-                'DO NOT echo the user query or any part of the historical transcript.',
-                'Do not say "I don\'t know" if the context provides the answer.',
-                'Avoid technical IDs or "Atom #" prefixes.',
-                'Return ONLY the final conversation-ready text, starting with the answer itself.'
+                'Final Assistant Reply:'
             ].join('\n');
 
             const synthesizedResponse = await synthesisSession.prompt(mergePrompt, {
