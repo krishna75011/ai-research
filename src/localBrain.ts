@@ -11,7 +11,7 @@ interface BrainResources {
 let resourcesPromise: Promise<BrainResources> | null = null;
 let inferenceQueue = Promise.resolve();
 
-function getModelPath(envName: string, fileName: string): string {
+export function getModelPath(envName: string, fileName: string): string {
     return process.env[envName] ?? path.join(process.cwd(), 'models', fileName);
 }
 
@@ -80,7 +80,7 @@ function createSession(context: LlamaContext, systemPrompt: string): LlamaChatSe
     });
 }
 
-function buildSystemPrompt(basePrompt: string, memoryContext?: string | null): string {
+export function buildSystemPrompt(basePrompt: string, memoryContext?: string | null): string {
     if (!memoryContext) return basePrompt;
 
     return `${basePrompt}\n\n${memoryContext}\nUse these synthesized memories as cross-reference context when forming the response.`;
