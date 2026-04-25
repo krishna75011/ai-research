@@ -57,7 +57,7 @@ function scoreCandidateResponse(value: string | null | undefined): number {
     if (text.length > 240) score += 4; // Reward detail/evidence
     if (/\b(qwen|gemma)\b/i.test(text)) score -= 8;
     if (/\b(response is|final answer should|therefore)\b/i.test(text)) score -= 4;
-    if (/\b(i (am sorry|don't know|cannot recall|do not have|does not contain))\b/i.test(text)) score -= 12; // Heavy penalty for false refusal
+    if (/\b(am sorry|don't know|cannot recall|do not have|does not contain|no information)\b/i.test(text)) score -= 15; // Heavier penalty, no leading 'i'
     if (text.includes('### At')) score -= 10; 
 
     return score;
@@ -81,7 +81,16 @@ export function selectUserFacingResponse(finalResponse: string | null | undefine
         }))
         .sort((left, right) => right.score - left.score);
 
-    return ranked[0]!.text;
+    const top = ranked[0]!;
+    const synthesized = ranked.find(c => c.source === 'final');
+
+    // If synthesis is almost as good as the top candidate (within 2 points), 
+    // keep it to avoid jarring UX changes after streaming.
+    if (synthesized && top.score - synthesized.score < 2) {
+        return synthesized.text!;
+    }
+
+    return top.text!;
 }
 
 function assertModelExists(modelPath: string) {
