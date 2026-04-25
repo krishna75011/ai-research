@@ -251,7 +251,10 @@ const app = new Elysia()
                     clientThrottles.set(ws.id, now);
 
                     const turnId = crypto.randomUUID();
+                    ws.send({ status: 'orchestration_step', step: 'Generating thought wave...' });
                     const thoughtVector = createTextVector(thought);
+                    
+                    ws.send({ status: 'orchestration_step', step: 'Probing memory resonance...' });
                     const memoryProbe = await probeMemory(thought, thoughtVector, { workspaceId });
 
                     const userAtom = await recordInteraction({
@@ -271,11 +274,12 @@ const app = new Elysia()
                         }
                     });
 
+                    ws.send({ status: 'orchestration_step', step: 'Evaluating Qwen/Gemma & synthesizing...' });
                     const aiResult = await processWaveThought(thought, memoryProbe.assembledContext, true, (token) => {
                         ws.send({
                             status: 'thought_stream',
                             workspaceId: memoryProbe.workspaceId,
-                            chunk: token,
+                            token,
                             timestamp: Date.now()
                         });
                     });

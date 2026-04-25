@@ -1175,6 +1175,17 @@
                     return;
                 }
 
+                if (data.status === 'orchestration_step') {
+                    const tempMsg = document.getElementById('temp-stream-msg');
+                    if (tempMsg && tempMsg.dataset.started !== 'true') {
+                        const body = document.getElementById('temp-stream-body');
+                        if (body) {
+                            body.innerHTML = `<span style="opacity: 0.5;">${data.step}</span>`;
+                        }
+                    }
+                    return;
+                }
+
                 if (data.status === 'thought_stream') {
                     let tempMsg = document.getElementById('temp-stream-msg');
                     const body = document.getElementById('temp-stream-body');
