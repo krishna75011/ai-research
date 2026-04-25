@@ -308,6 +308,42 @@
             font-weight: 300;
         }
 
+        .brain-output-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 0.8rem;
+            margin-top: 1.2rem;
+        }
+
+        .brain-output-card {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 0.9rem 1rem;
+        }
+
+        body.theme-watercolor .brain-output-card {
+            background: rgba(0, 0, 0, 0.03);
+        }
+
+        .brain-output-label {
+            display: block;
+            margin-bottom: 0.35rem;
+            font-size: 0.7rem;
+            font-weight: 700;
+            color: var(--primary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .brain-output-value {
+            margin: 0;
+            font-size: 0.9rem;
+            line-height: 1.5;
+            color: var(--text-dim);
+            white-space: pre-wrap;
+        }
+
         .memory-recall-badge {
             margin-top: 1.2rem;
             background: rgba(112, 0, 255, 0.1);
@@ -365,6 +401,16 @@
                 Resonant Thought Decoded
             </span>
             <div id="ai-response"></div>
+            <div class="brain-output-grid" id="brain-output-grid" style="display: none;">
+                <div class="brain-output-card">
+                    <span class="brain-output-label">Qwen Output</span>
+                    <p class="brain-output-value" id="qwen-output"></p>
+                </div>
+                <div class="brain-output-card">
+                    <span class="brain-output-label">Gemma Output</span>
+                    <p class="brain-output-value" id="gemma-output"></p>
+                </div>
+            </div>
             <div class="memory-recall-badge" id="memory-badge">
                 <b>RESONANCE RECALL:</b> <span id="memory-context"></span>
             </div>
@@ -377,6 +423,9 @@
         const host = document.getElementById('visualizer-host');
         const overlay = document.getElementById('overlay');
         const responseText = document.getElementById('ai-response');
+        const brainOutputGrid = document.getElementById('brain-output-grid');
+        const qwenOutput = document.getElementById('qwen-output');
+        const gemmaOutput = document.getElementById('gemma-output');
         const memoryBadge = document.getElementById('memory-badge');
         const memoryContext = document.getElementById('memory-context');
         const themeSelect = document.getElementById('theme-select');
@@ -390,6 +439,19 @@
         const statLatency = document.getElementById('stat-latency');
         const statPeaks = document.getElementById('stat-peaks');
         let totalPeaks = 0;
+
+        function renderModelOutputs(modelOutputs) {
+            if (!modelOutputs || (!modelOutputs.qwen && !modelOutputs.gemma)) {
+                brainOutputGrid.style.display = 'none';
+                qwenOutput.innerText = '';
+                gemmaOutput.innerText = '';
+                return;
+            }
+
+            qwenOutput.innerText = modelOutputs.qwen || 'No Qwen pass.';
+            gemmaOutput.innerText = modelOutputs.gemma || 'No Gemma pass.';
+            brainOutputGrid.style.display = 'grid';
+        }
 
         // Theme Toggle
         themeSelect.addEventListener('change', (e) => {
@@ -659,7 +721,8 @@
                         setSystemStatus(microphoneEnabled ? 'Acoustic Uplink' : 'Dual-Brain: Active');
                     }
 
-                    responseText.innerText = data.response;
+                    responseText.innerText = `Final Merged Response\n\n${data.response}`;
+                    renderModelOutputs(data.modelOutputs);
 
                     if (data.memoryActive) {
                         memoryBadge.style.display = 'block';
@@ -681,6 +744,7 @@
                         setSystemStatus('Acoustic Uplink');
                     }
                     responseText.innerText = data.message;
+                    renderModelOutputs(null);
                     memoryBadge.style.display = 'none';
                     overlay.style.display = 'block';
                     statLatency.innerText = '-- ms';

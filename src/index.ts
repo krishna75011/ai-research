@@ -106,14 +106,19 @@ const app = new Elysia()
                         }
                     });
 
-                    const aiResponse = await processWaveThought(parsedMessage.thought, memoryProbe.assembledContext);
-                    await recordAssistantMemory(aiResponse, ws.id, turnId, userAtom.id, 'text');
+                    const aiResult = await processWaveThought(parsedMessage.thought, memoryProbe.assembledContext);
+                    await recordAssistantMemory(aiResult.finalResponse, ws.id, turnId, userAtom.id, 'text');
 
                     const latencyMs = (performance.now() - start).toFixed(2);
 
                     ws.send({
                         status: 'thought_processed',
-                        response: aiResponse,
+                        response: aiResult.finalResponse,
+                        modelOutputs: {
+                            qwen: aiResult.qwenOutput,
+                            gemma: aiResult.gemmaOutput,
+                            final: aiResult.finalResponse
+                        },
                         vector: thoughtVector,
                         memoryActive: memoryProbe.citations.length > 0,
                         context: memoryProbe.assembledContext,
@@ -169,14 +174,19 @@ const app = new Elysia()
                         }
                     });
 
-                    const aiResponse = await processWaveThought(acousticSummary.prompt, memoryProbe.assembledContext);
-                    await recordAssistantMemory(aiResponse, ws.id, turnId, userAtom.id, 'acoustic-uplink');
+                    const aiResult = await processWaveThought(acousticSummary.prompt, memoryProbe.assembledContext);
+                    await recordAssistantMemory(aiResult.finalResponse, ws.id, turnId, userAtom.id, 'acoustic-uplink');
 
                     const latencyMs = (performance.now() - start).toFixed(2);
 
                     ws.send({
                         status: 'thought_processed',
-                        response: aiResponse,
+                        response: aiResult.finalResponse,
+                        modelOutputs: {
+                            qwen: aiResult.qwenOutput,
+                            gemma: aiResult.gemmaOutput,
+                            final: aiResult.finalResponse
+                        },
                         vector: interference,
                         memoryActive: memoryProbe.citations.length > 0,
                         context: memoryProbe.assembledContext,

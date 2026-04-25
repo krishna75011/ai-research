@@ -8,6 +8,12 @@ interface BrainResources {
     systemPrompt: string;
 }
 
+export interface WaveThoughtResult {
+    finalResponse: string;
+    qwenOutput: string | null;
+    gemmaOutput: string | null;
+}
+
 let resourcesPromise: Promise<BrainResources> | null = null;
 let inferenceQueue = Promise.resolve();
 
@@ -86,7 +92,7 @@ export function buildSystemPrompt(basePrompt: string, memoryContext?: string | n
     return `${basePrompt}\n\n${memoryContext}\nUse this retrieved memory evidence as context. Prefer cited recall over speculation, and preserve conflicts when branch warnings are present.`;
 }
 
-export async function processWaveThought(input: string, memoryContext?: string | null, useDualBrain = true): Promise<string> {
+export async function processWaveThought(input: string, memoryContext?: string | null, useDualBrain = true): Promise<WaveThoughtResult> {
     return withInferenceLock(async () => {
         const { qwenContext, gemmaContext, systemPrompt } = await ensureResources();
         let alphaSession: LlamaChatSession | null = null;
@@ -102,7 +108,12 @@ export async function processWaveThought(input: string, memoryContext?: string |
             console.log('Interference initialized...');
 
             if (!useDualBrain) {
-                return await betaSession.prompt(input);
+                const finalResponse = await betaSession.prompt(input);
+                return {
+                    finalResponse,
+                    qwenOutput: null,
+                    gemmaOutput: finalResponse
+                };
             }
 
             const [alphaResponse, betaResponse] = await Promise.all([
@@ -111,15 +122,19 @@ export async function processWaveThought(input: string, memoryContext?: string |
             ]);
 
             const interferencePrompt =
-                `[Alpha Phase]: ${alphaResponse}\n` +
-                `[Beta Phase]: ${betaResponse}\n` +
-                'Merge these two logical phases into a single, cohesive harmonic output. Focus on the overlapping constructive ideas.';
+                `[Qwen Output]: ${alphaResponse}\n` +
+                `[Gemma Output]: ${betaResponse}\n` +
+                'Merge these two model outputs into a single, cohesive response. Focus on the overlapping constructive ideas and keep the final answer direct.';
 
             const finalResponse = await alphaSession.prompt(interferencePrompt);
             const duration = ((Date.now() - startTime) / 1000).toFixed(2);
 
             console.log(`Constructive logic synthesized in ${duration}s`);
-            return finalResponse;
+            return {
+                finalResponse,
+                qwenOutput: alphaResponse,
+                gemmaOutput: betaResponse
+            };
         } finally {
             alphaSession?.dispose({ disposeSequence: true });
             betaSession?.dispose({ disposeSequence: true });
